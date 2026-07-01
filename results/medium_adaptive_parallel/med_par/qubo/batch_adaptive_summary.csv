@@ -1,0 +1,3 @@
+batch_id,adaptive_iterations_used,adaptive_was_feasible,final_mult_c1,final_mult_c2,final_mult_c3,final_mult_c4
+1,1,True,1.0,1.0,1.0,1.0
+2,1,True,1.0,1.0,1.0,1.0

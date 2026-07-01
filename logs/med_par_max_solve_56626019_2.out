@@ -1,0 +1,23 @@
+>>> host=scc025 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=2 threads=128
+
+============================================================================
+PARALLEL SOLVE - batch 2/2
+============================================================================
+  dataset:      instances_medium
+  demand rows:  69,374
+  est Z vars:   532,295
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/medium_adaptive_parallel_max/med_par_max/parallel_work
+============================================================================
+
+=== QUBO Batch 2 | 386 parts | 69,374 demand rows | estimated Z=532,295 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 18.74s | Z=532,295 Y=141,409 X=498 interactions=4,547,163
+    penalties: C1=2,515,022.95 C2=1,509,013.77 C3=1,006,009.18
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | multipliers c1=1.00 c2=1.00 c3=1.00
+    adaptive iter 1 | violations C1=0 C2=0 C3=0 | cost=279051647.85
+    adaptive feasible at iter 1
+  [2b/3] Adaptive succeeded - skipping retry-reads fallback
+  [3/3] Batch selected | OK | aligned cost=$279,051,647.85 | total_time=46631.76s
+
+  saved batch 2 -> batch_0002.pkl | solve=46634.99s peak=57,310.3 MB | violations=0

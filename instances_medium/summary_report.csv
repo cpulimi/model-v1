@@ -1,0 +1,2 @@
+instance_name,schema_version,seed,anchor_city_file,anchor_city_count,n_hubs_requested,n_hubs_generated,n_hubs,n_zips,n_parts,n_demand_rows,n_distance_rows,within_penalty_start_share,within_max_service_share,avg_eligible_hubs_per_zip
+instances_medium,7.0.0,42,D:\课程\SCM519\data\default_anchor_cities.csv,885,500,500,500,2000,800,147293,1000000,0.962,1.0,7.699

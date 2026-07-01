@@ -1,0 +1,17 @@
+>>> host=scc030 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=1 threads=128
+
+============================================================================
+PARALLEL SOLVE - batch 1/4
+============================================================================
+  dataset:      instances_high
+  demand rows:  52,125
+  est Z vars:   596,556
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/high_adaptive_parallel_max/high_par_max/parallel_work
+============================================================================
+
+=== QUBO Batch 1 | 283 parts | 52,125 demand rows | estimated Z=596,556 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 26.02s | Z=596,556 Y=161,726 X=796 interactions=6,684,422
+    penalties: C1=2,516,113.40 C2=1,509,668.04 C3=1,006,445.36
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | multipliers c1=1.00 c2=1.00 c3=1.00

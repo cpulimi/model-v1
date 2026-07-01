@@ -1,0 +1,52 @@
+{
+  "run_root": "/home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021",
+  "solvers": [
+    "gurobi",
+    "qubo"
+  ],
+  "rows": [
+    {
+      "solver": "gurobi",
+      "total_cost": 118998536.93199952,
+      "open_hubs": 178,
+      "closed_hubs": 322,
+      "stocked_hub_part_pairs": 65703,
+      "hub_zip_part_pairings": 147293,
+      "structural_violations": 0,
+      "sla_distance_violations": 32971,
+      "max_service_distance_violations": 0,
+      "wall_seconds": 966.8968443879858,
+      "peak_memory_mb": 5965.4140625,
+      "current_memory_mb": 5965.4140625,
+      "output_dir": "/home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021/gurobi"
+    },
+    {
+      "solver": "qubo",
+      "total_cost": 128116863.54899868,
+      "open_hubs": 193,
+      "closed_hubs": 307,
+      "stocked_hub_part_pairs": 71262,
+      "hub_zip_part_pairings": 147293,
+      "structural_violations": 0,
+      "sla_distance_violations": 37488,
+      "max_service_distance_violations": 0,
+      "wall_seconds": 6603.0628091059625,
+      "peak_memory_mb": 30786.5625,
+      "current_memory_mb": 30786.5625,
+      "output_dir": "/home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021/qubo"
+    }
+  ],
+  "comparison": {
+    "qubo_minus_gurobi_cost": 9118326.616999164,
+    "qubo_minus_gurobi_cost_pct": 7.662553550729568,
+    "open_hubs_delta_qubo_minus_gurobi": 15,
+    "stocked_pairs_delta_qubo_minus_gurobi": 5559,
+    "assignments_delta_qubo_minus_gurobi": 0,
+    "open_hubs_jaccard": 0.6060606060606061,
+    "stocked_pairs_jaccard": 0.4370324516582556,
+    "assignments_triple_jaccard": 0.2878020205376151,
+    "shared_zip_part_count": 147293,
+    "assignment_hub_agreement_rate": 0.44696625094199993,
+    "assignment_hub_disagreement_count": 81458
+  }
+}

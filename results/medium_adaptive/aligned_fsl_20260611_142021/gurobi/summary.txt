@@ -1,0 +1,19 @@
+============================================================================
+GUROBI FINAL RESULTS
+============================================================================
+  total cost:                 $118,998,536.93
+  inventory cost:             $13,320,804.64
+  fixed open-hub cost:        $89,000,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $861,850.00
+  assignment transport cost:  $15,815,882.29
+  open hubs:                  178
+  closed hubs:                322
+  stocked hub-part pairs:     65,703
+  hub-zip-part pairings:      147,293
+  structural violations:      0
+  SLA distance violations:    32,971
+  wall time:                  966.90s
+  peak/current memory:        5,965.4/5,965.4 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021/gurobi
+============================================================================

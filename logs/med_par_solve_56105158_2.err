@@ -1,0 +1,30 @@
+/var/spool/slurmd/job56105158/slurm_script: line 23: /var/spool/slurmd/job56105158/common.sh: No such file or directory
+=====================================================================
+Loaded: mamba 2.6.2
+
+Usage example:
+$ mamba create -n myenv -c conda-forge python=3 <package_name>
+$ source activate myenv
+
+Only run "pip install" after activating an environment.
+Running pip without activating an environment is known to cause issues.
+
+To list available environments:
+$ mamba info --envs
+
+More info: docs.rc.asu.edu/python
+
+=====================================================================
+     
+===============================================================================
+Loaded: gurobi 13.0.1
+
+  The World's Fastest Solver.
+  This newer version has GPU acceleration with CUDA 13.
+
+  For more information, visit:
+  https://www.gurobi.com/whats-new-gurobi-13-0/
+
+===============================================================================
+     
+/var/spool/slurmd/job56105158/slurm_script: line 33: PROJECT: unbound variable

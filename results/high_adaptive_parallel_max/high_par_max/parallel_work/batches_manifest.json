@@ -1,0 +1,49 @@
+{
+  "run_name": "high_par_max",
+  "total_batches": 4,
+  "batch_ids": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "batching_signature": {
+    "dataset_dir": "instances_high",
+    "max_service_miles": null,
+    "penalty_start_miles": null,
+    "top_hubs_per_zip": -1,
+    "max_parts_total": -1,
+    "part_batch_size": 1000,
+    "max_z_vars_per_batch": 600000
+  },
+  "batches": [
+    {
+      "batch_id": 1,
+      "num_parts": 283,
+      "num_rows": 52125,
+      "estimated_z_vars": 596556,
+      "note": ""
+    },
+    {
+      "batch_id": 2,
+      "num_parts": 285,
+      "num_rows": 52356,
+      "estimated_z_vars": 599575,
+      "note": ""
+    },
+    {
+      "batch_id": 3,
+      "num_parts": 279,
+      "num_rows": 51965,
+      "estimated_z_vars": 597350,
+      "note": ""
+    },
+    {
+      "batch_id": 4,
+      "num_parts": 153,
+      "num_rows": 29717,
+      "estimated_z_vars": 338538,
+      "note": ""
+    }
+  ]
+}

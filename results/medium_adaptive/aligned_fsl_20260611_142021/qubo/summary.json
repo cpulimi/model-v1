@@ -1,0 +1,100 @@
+{
+  "solver": "qubo",
+  "dataset": {
+    "dataset_name": "instances_medium",
+    "dataset_dir": "/home/cpulimi/ModelV1/model-v1/instances_medium",
+    "hubs": 500,
+    "parts": 800,
+    "zips": 2000,
+    "active_demand_pairs": 147293,
+    "max_service_miles": 180.0,
+    "base_miles": 20.0,
+    "penalty_start_miles": 130.0,
+    "top_hubs_per_zip": null,
+    "max_parts_total": null
+  },
+  "final_solution": {
+    "open_hubs_count": 193,
+    "closed_hubs_count": 307,
+    "stocked_pairs_count": 71262,
+    "assignments_count": 147293,
+    "cost": {
+      "total_cost": 128116863.54899868,
+      "inventory_cost": 14489272.940000106,
+      "fixed_open_hub_cost": 96500000.0,
+      "overflow_storage_cost": 0.0,
+      "new_hub_transfer_cost": 738700.0,
+      "assignment_transport_cost": 16388890.608998576,
+      "overflow_units": 0.0
+    },
+    "audit": {
+      "c1_assignment_violations": 0,
+      "c1_missing_assignments": 0,
+      "c1_multiple_assignments": 0,
+      "c1_invalid_hub_assignments": 0,
+      "c1_extra_assignments": 0,
+      "c2_assignment_without_stock": 0,
+      "c3_stock_without_open_hub": 0,
+      "c4_hubs_over_L": 0,
+      "c4_total_overflow_units": 0,
+      "max_service_distance_violations": 0,
+      "sla_distance_violations": 37488,
+      "total_structural_violations": 0
+    }
+  },
+  "runtime": {
+    "wall_seconds": 6603.0628091059625,
+    "qubo_build_seconds": 28.537057638168335,
+    "qubo_sample_seconds": 4630.237560510635,
+    "sample_eval_seconds": 1764.607195854187,
+    "batch_total_seconds": 6423.393454790115,
+    "peak_memory_mb": 30786.5625,
+    "current_memory_mb": 30786.5625
+  },
+  "output_dir": "/home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021/qubo",
+  "extra": {
+    "completed_batches": 1,
+    "total_batches": 2,
+    "full_batch_coverage": false,
+    "stopped_due_to_time_limit": true,
+    "raw_solution": {
+      "open_hubs_count": 498,
+      "stocked_pairs_count": 98932,
+      "assignments_count": 77919,
+      "cost": {
+        "total_cost": 280370611.5220003,
+        "inventory_cost": 19388294.59000064,
+        "fixed_open_hub_cost": 249000000.0,
+        "overflow_storage_cost": 0.0,
+        "new_hub_transfer_cost": 1522650.0,
+        "assignment_transport_cost": 10459666.931999713,
+        "overflow_units": 0.0
+      },
+      "audit": {
+        "c1_assignment_violations": 69374,
+        "c1_missing_assignments": 69374,
+        "c1_multiple_assignments": 0,
+        "c1_invalid_hub_assignments": 0,
+        "c1_extra_assignments": 0,
+        "c2_assignment_without_stock": 0,
+        "c3_stock_without_open_hub": 0,
+        "c4_hubs_over_L": 0,
+        "c4_total_overflow_units": 0,
+        "max_service_distance_violations": 0,
+        "sla_distance_violations": 28186,
+        "total_structural_violations": 69374
+      }
+    },
+    "postprocess": {
+      "repair_assignments": true,
+      "trim_unused_open_stock": true,
+      "missing_unrepaired": 0,
+      "hub_prune_enabled": true,
+      "hub_prune_closures": 304,
+      "hub_prune_relocations": 94434
+    },
+    "adaptive_penalty_mode": "off",
+    "adaptive_penalty_iterations_max": 5,
+    "adaptive_penalty_growth": 1.5
+  }
+}

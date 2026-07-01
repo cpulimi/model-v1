@@ -1,0 +1,130 @@
+{
+  "solver": "qubo",
+  "dataset": {
+    "dataset_name": "instances_low",
+    "dataset_dir": "/home/cpulimi/ModelV1/model-v1/instances_low",
+    "hubs": 200,
+    "parts": 600,
+    "zips": 2000,
+    "active_demand_pairs": 115710,
+    "max_service_miles": 180.0,
+    "base_miles": 20.0,
+    "penalty_start_miles": 130.0,
+    "top_hubs_per_zip": null,
+    "max_parts_total": null
+  },
+  "final_solution": {
+    "open_hubs_count": 112,
+    "closed_hubs_count": 88,
+    "stocked_pairs_count": 43109,
+    "assignments_count": 115710,
+    "cost": {
+      "total_cost": 78272802.65949988,
+      "inventory_cost": 8769546.64,
+      "fixed_open_hub_cost": 56000000.0,
+      "overflow_storage_cost": 0.0,
+      "new_hub_transfer_cost": 580200.0,
+      "assignment_transport_cost": 12923056.019499881,
+      "overflow_units": 0.0
+    },
+    "audit": {
+      "c1_assignment_violations": 0,
+      "c1_missing_assignments": 0,
+      "c1_multiple_assignments": 0,
+      "c1_invalid_hub_assignments": 0,
+      "c1_extra_assignments": 0,
+      "c2_assignment_without_stock": 0,
+      "c3_stock_without_open_hub": 0,
+      "c4_hubs_over_L": 0,
+      "c4_total_overflow_units": 0,
+      "max_service_distance_violations": 0,
+      "sla_distance_violations": 28362,
+      "total_structural_violations": 0
+    }
+  },
+  "runtime": {
+    "wall_seconds": 19860.045619720127,
+    "qubo_build_seconds": 12.82405138015747,
+    "qubo_sample_seconds": 192512.20630979538,
+    "sample_eval_seconds": 0.0,
+    "batch_total_seconds": 192525.57239222527,
+    "peak_memory_mb": 8731.69205379486,
+    "current_memory_mb": 38.75907516479492,
+    "parallel_critical_path_seconds": 19860.045619720127,
+    "sequential_equivalent_seconds": 192525.57239222527,
+    "merge_seconds": 54.31648873677477,
+    "per_batch_total_seconds": [
+      19805.729130983353,
+      18939.39678287506,
+      18465.69406223297,
+      19111.83945775032,
+      18999.106256723404,
+      17956.375230312347,
+      18563.44023680687,
+      19349.188688516617,
+      19015.825600385666,
+      18762.82185125351,
+      3556.155094385147
+    ],
+    "per_batch_peak_memory_mb": [
+      8731.69205379486,
+      8508.53249168396,
+      8335.363196372986,
+      8540.584154129028,
+      8505.142628669739,
+      8133.190937042236,
+      8372.861305236816,
+      8624.45355796814,
+      8503.086292266846,
+      8415.55617904663,
+      1418.5645265579224
+    ]
+  },
+  "output_dir": "/home/cpulimi/ModelV1/model-v1/results/low_adaptive_parallel_max/low_par_max/qubo",
+  "extra": {
+    "completed_batches": 11,
+    "total_batches": 11,
+    "full_batch_coverage": true,
+    "stopped_due_to_time_limit": false,
+    "execution_mode": "parallel_batches",
+    "raw_solution": {
+      "open_hubs_count": 200,
+      "stocked_pairs_count": 81973,
+      "assignments_count": 115710,
+      "cost": {
+        "total_cost": 132492392.2804996,
+        "inventory_cost": 16816685.95,
+        "fixed_open_hub_cost": 100000000.0,
+        "overflow_storage_cost": 0.0,
+        "new_hub_transfer_cost": 1198300.0,
+        "assignment_transport_cost": 14477406.330499602,
+        "overflow_units": 0.0
+      },
+      "audit": {
+        "c1_assignment_violations": 0,
+        "c1_missing_assignments": 0,
+        "c1_multiple_assignments": 0,
+        "c1_invalid_hub_assignments": 0,
+        "c1_extra_assignments": 0,
+        "c2_assignment_without_stock": 0,
+        "c3_stock_without_open_hub": 0,
+        "c4_hubs_over_L": 0,
+        "c4_total_overflow_units": 0,
+        "max_service_distance_violations": 0,
+        "sla_distance_violations": 37822,
+        "total_structural_violations": 0
+      }
+    },
+    "postprocess": {
+      "repair_assignments": true,
+      "trim_unused_open_stock": true,
+      "missing_unrepaired": 0,
+      "hub_prune_enabled": true,
+      "hub_prune_closures": 88,
+      "hub_prune_relocations": 73309
+    },
+    "adaptive_penalty_mode": "within-batch",
+    "adaptive_penalty_iterations_max": 5,
+    "adaptive_penalty_growth": 1.5
+  }
+}

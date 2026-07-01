@@ -1,0 +1,23 @@
+>>> host=scc023 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python threads=128
+============================================================================
+QUBO FINAL RESULTS (PARALLEL MERGE)
+============================================================================
+  total cost:                 $129,493,740.54
+  inventory cost:             $14,894,615.79
+  fixed open-hub cost:        $96,000,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $1,160,100.00
+  assignment transport cost:  $17,439,024.75
+  open hubs:                  192
+  closed hubs:                308
+  stocked hub-part pairs:     72,793
+  hub-zip-part pairings:      147,293
+  structural violations:      0
+  SLA distance violations:    42,728
+  wall time:                  56,998.12s
+  peak/current memory:        81,849.5/53.9 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/medium_adaptive_parallel_max/med_par_max/qubo
+============================================================================
+
+  parallel critical path: 56,998.1s (sequential-equivalent would be 103,478.8s)
+  outputs: /home/cpulimi/ModelV1/model-v1/results/medium_adaptive_parallel_max/med_par_max/qubo

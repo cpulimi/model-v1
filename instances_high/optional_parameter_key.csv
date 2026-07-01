@@ -1,0 +1,29 @@
+Symbol,Type,Description
+i,Index,ZIP space
+j,Index,Hub space
+k,Index,Part space
+hub_id,Metadata,Unique hub identifier
+anchor_id,Metadata,Anchor-city identifier sourced from the anchor-city CSV
+anchor_city,Metadata,Human-readable anchor-city name sourced from the anchor-city CSV
+zip_id,Metadata,Unique ZIP identifier
+part_id,Metadata,Unique part identifier
+region_code,Metadata,Operating region code (NAM/LATAM/EMEA/APAC)
+T_j,Indexed parameter,"Binary hub state (1 = active, 0 = candidate)"
+B_j,Indexed parameter,Hub capacity / stocking bound
+P_k,Indexed parameter,Part-level price / stocking cost
+d_ij,Indexed parameter,Raw haversine distance ZIP i to hub j (miles)
+Q_ik,Indexed parameter,Binary demand indicator
+b_ik,Indexed parameter,Dispatch count / demand intensity
+C,Global scalar,Transfer-cost scalar
+h_s,Global scalar,Base transport coefficient
+h_d,Global scalar,Distance transport coefficient
+d_s,Global scalar,Distance threshold / service-penalty start (model)
+L,Global scalar,Soft stocking limit per hub
+S_lim,Global scalar,Base fixed cost for keeping a hub open
+S_var,Global scalar,Overflow cost per stocked part beyond L
+lambda_1,Global scalar,Weight on base transport term
+lambda_2,Global scalar,Weight on distance transport term
+lambda_3,Global scalar,Weight on distance-above-threshold term
+base_miles,Global scalar,Base / free-miles distance threshold
+penalty_start_miles,Global scalar,Distance at which SLA penalty starts
+max_service_miles,Global scalar,Maximum eligible service distance

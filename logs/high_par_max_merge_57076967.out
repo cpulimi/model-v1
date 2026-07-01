@@ -1,0 +1,23 @@
+>>> host=scc028 project=/home/cpulimi/ModelV1/model-v1 python=/home/cpulimi/.conda/envs/qubo/bin/python threads=128
+============================================================================
+QUBO FINAL RESULTS (PARALLEL MERGE)
+============================================================================
+  total cost:                 $162,936,064.56
+  inventory cost:             $19,680,620.31
+  fixed open-hub cost:        $118,500,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $1,428,000.00
+  assignment transport cost:  $23,327,444.25
+  open hubs:                  237
+  closed hubs:                563
+  stocked hub-part pairs:     100,108
+  hub-zip-part pairings:      186,163
+  structural violations:      0
+  SLA distance violations:    63,170
+  wall time:                  54,022.73s
+  peak/current memory:        89,654.1/80.4 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/high_adaptive_parallel_max/high_par_max/qubo
+============================================================================
+
+  parallel critical path: 54,022.7s (sequential-equivalent would be 182,451.2s)
+  outputs: /home/cpulimi/ModelV1/model-v1/results/high_adaptive_parallel_max/high_par_max/qubo

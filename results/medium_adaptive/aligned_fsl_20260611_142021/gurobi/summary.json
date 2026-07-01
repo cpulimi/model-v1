@@ -1,0 +1,61 @@
+{
+  "solver": "gurobi",
+  "dataset": {
+    "dataset_name": "instances_medium",
+    "dataset_dir": "/home/cpulimi/ModelV1/model-v1/instances_medium",
+    "hubs": 500,
+    "parts": 800,
+    "zips": 2000,
+    "active_demand_pairs": 147293,
+    "max_service_miles": 180.0,
+    "base_miles": 20.0,
+    "penalty_start_miles": 130.0,
+    "top_hubs_per_zip": null,
+    "max_parts_total": null
+  },
+  "final_solution": {
+    "open_hubs_count": 178,
+    "closed_hubs_count": 322,
+    "stocked_pairs_count": 65703,
+    "assignments_count": 147293,
+    "cost": {
+      "total_cost": 118998536.93199952,
+      "inventory_cost": 13320804.640000157,
+      "fixed_open_hub_cost": 89000000.0,
+      "overflow_storage_cost": 0.0,
+      "new_hub_transfer_cost": 861850.0,
+      "assignment_transport_cost": 15815882.29199936,
+      "overflow_units": 0.0
+    },
+    "audit": {
+      "c1_assignment_violations": 0,
+      "c1_missing_assignments": 0,
+      "c1_multiple_assignments": 0,
+      "c1_invalid_hub_assignments": 0,
+      "c1_extra_assignments": 0,
+      "c2_assignment_without_stock": 0,
+      "c3_stock_without_open_hub": 0,
+      "c4_hubs_over_L": 0,
+      "c4_total_overflow_units": 0,
+      "max_service_distance_violations": 0,
+      "sla_distance_violations": 32971,
+      "total_structural_violations": 0
+    }
+  },
+  "runtime": {
+    "wall_seconds": 966.8968443879858,
+    "solver_runtime_seconds": 242.87314105033875,
+    "peak_memory_mb": 5965.4140625,
+    "current_memory_mb": 5965.4140625
+  },
+  "output_dir": "/home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021/gurobi",
+  "extra": {
+    "gurobi_status": "OPTIMAL",
+    "gurobi_status_code": 2,
+    "gurobi_objective": 118998536.93200028,
+    "mip_gap": 0.0009795096477835667,
+    "num_variables": 1424728,
+    "num_constraints": 1572521,
+    "has_incumbent_solution": true
+  }
+}

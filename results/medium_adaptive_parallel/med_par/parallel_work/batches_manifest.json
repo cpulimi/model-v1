@@ -1,0 +1,33 @@
+{
+  "run_name": "med_par",
+  "total_batches": 2,
+  "batch_ids": [
+    1,
+    2
+  ],
+  "batching_signature": {
+    "dataset_dir": "instances_medium",
+    "max_service_miles": null,
+    "penalty_start_miles": null,
+    "top_hubs_per_zip": -1,
+    "max_parts_total": -1,
+    "part_batch_size": 1000,
+    "max_z_vars_per_batch": 600000
+  },
+  "batches": [
+    {
+      "batch_id": 1,
+      "num_parts": 414,
+      "num_rows": 77919,
+      "estimated_z_vars": 598686,
+      "note": ""
+    },
+    {
+      "batch_id": 2,
+      "num_parts": 386,
+      "num_rows": 69374,
+      "estimated_z_vars": 532295,
+      "note": ""
+    }
+  ]
+}

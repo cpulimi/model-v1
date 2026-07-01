@@ -1,0 +1,30 @@
+/var/spool/slurmd/job56078553/slurm_script: line 13: /var/spool/slurmd/job56078553/common.sh: No such file or directory
+=====================================================================
+Loaded: mamba 2.6.2
+
+Usage example:
+$ mamba create -n myenv -c conda-forge python=3 <package_name>
+$ source activate myenv
+
+Only run "pip install" after activating an environment.
+Running pip without activating an environment is known to cause issues.
+
+To list available environments:
+$ mamba info --envs
+
+More info: docs.rc.asu.edu/python
+
+=====================================================================
+     
+===============================================================================
+Loaded: gurobi 13.0.1
+
+  The World's Fastest Solver.
+  This newer version has GPU acceleration with CUDA 13.
+
+  For more information, visit:
+  https://www.gurobi.com/whats-new-gurobi-13-0/
+
+===============================================================================
+     
+Missing package: openjij. Install with: pip install openjij

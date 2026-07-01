@@ -1,0 +1,9 @@
+
+============================================================================
+PARALLEL SOLVE - batch 1/2
+============================================================================
+  dataset:      instances_medium
+  demand rows:  77,919
+  est Z vars:   598,686
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/medium_adaptive_parallel/med_par/parallel_work
+============================================================================

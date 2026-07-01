@@ -1,0 +1,3 @@
+solver,total_cost,open_hubs,closed_hubs,stocked_hub_part_pairs,hub_zip_part_pairings,structural_violations,sla_distance_violations,max_service_distance_violations,wall_seconds,peak_memory_mb,current_memory_mb,output_dir
+gurobi,118998536.93199952,178,322,65703,147293,0,32971,0,966.8968443879858,5965.4140625,5965.4140625,/home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021/gurobi
+qubo,128116863.54899868,193,307,71262,147293,0,37488,0,6603.0628091059625,30786.5625,30786.5625,/home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021/qubo

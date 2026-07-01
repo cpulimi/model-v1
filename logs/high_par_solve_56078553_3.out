@@ -1,0 +1,10 @@
+>>> host=scc058 project= python=/packages/apps/mamba/2.6.2/bin/python batch=3
+
+============================================================================
+PARALLEL SOLVE - batch 3/4
+============================================================================
+  dataset:      instances_high
+  demand rows:  51,965
+  est Z vars:   597,350
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/high_adaptive_parallel/high_par/parallel_work
+============================================================================

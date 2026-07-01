@@ -1,0 +1,112 @@
+{
+  "solver": "qubo",
+  "dataset": {
+    "dataset_name": "instances_medium",
+    "dataset_dir": "/home/cpulimi/ModelV1/model-v1/instances_medium",
+    "hubs": 500,
+    "parts": 800,
+    "zips": 2000,
+    "active_demand_pairs": 147293,
+    "max_service_miles": 180.0,
+    "base_miles": 20.0,
+    "penalty_start_miles": 130.0,
+    "top_hubs_per_zip": null,
+    "max_parts_total": null
+  },
+  "final_solution": {
+    "open_hubs_count": 192,
+    "closed_hubs_count": 308,
+    "stocked_pairs_count": 72793,
+    "assignments_count": 147293,
+    "cost": {
+      "total_cost": 129493740.54299864,
+      "inventory_cost": 14894615.79,
+      "fixed_open_hub_cost": 96000000.0,
+      "overflow_storage_cost": 0.0,
+      "new_hub_transfer_cost": 1160100.0,
+      "assignment_transport_cost": 17439024.752998643,
+      "overflow_units": 0.0
+    },
+    "audit": {
+      "c1_assignment_violations": 0,
+      "c1_missing_assignments": 0,
+      "c1_multiple_assignments": 0,
+      "c1_invalid_hub_assignments": 0,
+      "c1_extra_assignments": 0,
+      "c2_assignment_without_stock": 0,
+      "c3_stock_without_open_hub": 0,
+      "c4_hubs_over_L": 0,
+      "c4_total_overflow_units": 0,
+      "max_service_distance_violations": 0,
+      "sla_distance_violations": 42728,
+      "total_structural_violations": 0
+    }
+  },
+  "runtime": {
+    "wall_seconds": 56998.1230678726,
+    "qubo_build_seconds": 39.636892557144165,
+    "qubo_sample_seconds": 103437.0386941433,
+    "sample_eval_seconds": 0.0,
+    "batch_total_seconds": 103478.8043615818,
+    "peak_memory_mb": 81849.48054981232,
+    "current_memory_mb": 53.85769081115723,
+    "parallel_critical_path_seconds": 56998.1230678726,
+    "sequential_equivalent_seconds": 103478.8043615818,
+    "merge_seconds": 151.07616187818348,
+    "per_batch_total_seconds": [
+      56847.046905994415,
+      46631.75745558739
+    ],
+    "per_batch_peak_memory_mb": [
+      81849.48054981232,
+      57310.27436542511
+    ]
+  },
+  "output_dir": "/home/cpulimi/ModelV1/model-v1/results/medium_adaptive_parallel_max/med_par_max/qubo",
+  "extra": {
+    "completed_batches": 2,
+    "total_batches": 2,
+    "full_batch_coverage": true,
+    "stopped_due_to_time_limit": false,
+    "execution_mode": "parallel_batches",
+    "raw_solution": {
+      "open_hubs_count": 498,
+      "stocked_pairs_count": 193292,
+      "assignments_count": 147293,
+      "cost": {
+        "total_cost": 310540120.4519991,
+        "inventory_cost": 39276619.28,
+        "fixed_open_hub_cost": 249000000.0,
+        "overflow_storage_cost": 0.0,
+        "new_hub_transfer_cost": 2942000.0,
+        "assignment_transport_cost": 19321501.171999164,
+        "overflow_units": 0.0
+      },
+      "audit": {
+        "c1_assignment_violations": 0,
+        "c1_missing_assignments": 0,
+        "c1_multiple_assignments": 0,
+        "c1_invalid_hub_assignments": 0,
+        "c1_extra_assignments": 0,
+        "c2_assignment_without_stock": 0,
+        "c3_stock_without_open_hub": 0,
+        "c4_hubs_over_L": 0,
+        "c4_total_overflow_units": 0,
+        "max_service_distance_violations": 0,
+        "sla_distance_violations": 53180,
+        "total_structural_violations": 0
+      }
+    },
+    "postprocess": {
+      "repair_assignments": true,
+      "trim_unused_open_stock": true,
+      "missing_unrepaired": 0,
+      "hub_prune_enabled": true,
+      "hub_prune_closures": 299,
+      "hub_prune_relocations": 71381
+    },
+    "adaptive_penalty_mode": "within-batch",
+    "adaptive_penalty_iterations_max": 5,
+    "adaptive_penalty_growth": 1.5
+  }
+}

@@ -1,0 +1,27 @@
+============================================================================================
+COMBINED FINAL COMPARISON
+============================================================================================
+Run folder: /home/cpulimi/ModelV1/model-v1/results/medium_adaptive/aligned_fsl_20260611_142021
+
+Solver      Total Cost        Open  Closed  Stocked Pairs  Assignments  Struct Viol  SLA Viol  Wall(s)  Peak MB
+----------  ----------------  -----  ------  -------------  -----------  -----------  --------  -------  -------
+gurobi       $118,998,536.93    178     322         65,703      147,293            0    32,971   966.90   5965.4
+qubo         $128,116,863.55    193     307         71,262      147,293            0    37,488  6603.06  30786.6
+
+QUBO vs Gurobi
+  cost gap:                       $9,118,326.62 (7.66%)
+  open hubs delta:                +15
+  stocked pairs delta:            +5,559
+  assignments delta:              +0
+  open-hub Jaccard:               0.6061
+  stocked-pair Jaccard:           0.4370
+  assignment-triple Jaccard:      0.2878
+  assignment hub agreement:       44.70%
+  assignment hub disagreements:   81,458
+
+Files written:
+  combined_summary.csv
+  combined_summary.json
+  combined_summary.txt
+  gurobi/summary.txt and qubo/summary.txt when those solvers were run
+============================================================================================
