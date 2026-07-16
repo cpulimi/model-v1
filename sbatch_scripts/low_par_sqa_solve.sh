@@ -5,11 +5,11 @@
 # SQA counterpart of low_par_solve.sh: batching + penalties match the SA scripts
 # so the only difference is the sampler backend (SQASampler vs SASampler).
 # SQA replicates the spins across --sqa-trotter slices, so memory is ~trotter x the
-# SA footprint and each read is slower; we grab the whole node (--mem 0) and give a
-# longer wall clock. TEST ON LOW FIRST before attempting med/high (likely OOM/timeout).
-#SBATCH -p fpga
-#SBATCH -q public
-#SBATCH -w sfpga01n
+# SA footprint and each read is slower; we request --mem 0 (all memory on the
+# allocated node) and a longer wall clock. TEST ON LOW FIRST before attempting
+# med/high (likely OOM/timeout).
+#SBATCH -p general
+#SBATCH -q private
 #SBATCH -c 128
 #SBATCH --mem 0
 #SBATCH -t 0-12:00:00

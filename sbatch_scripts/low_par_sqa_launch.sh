@@ -53,9 +53,9 @@ fi
 echo ">>> discovered $N batches (will run side by side as array 1-$N)"
 
 # --- 2) submit solve array ------------------------------------------------
-# NOTE: low_par_sqa_solve.sh pins -w sfpga01n and requests -c 128 / --mem 0, so
-# array tasks are scheduled as that single node's cores/memory free up rather than
-# fully in parallel. Drop -w / lower -c in the solve script for more concurrency.
+# NOTE: low_par_sqa_solve.sh requests -c 128 / --mem 0 (whole allocated node) for
+# the SQA trotter overhead; adjust --mem/-c in the solve script if the scheduler
+# rejects it or you want more concurrency.
 SOLVE_ID=$(sbatch --parsable --array=1-"$N" "$PROJECT/sbatch_scripts/low_par_sqa_solve.sh")
 echo ">>> SQA solve array submitted: job $SOLVE_ID (tasks 1-$N)"
 

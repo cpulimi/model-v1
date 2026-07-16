@@ -6,9 +6,8 @@
 #
 # Every flag below MUST match low_par_solve.sh (same run-name, output-dir,
 # dataset, and batching flags) so it loads the right batch checkpoints.
-#SBATCH -p fpga
-#SBATCH -q public
-#SBATCH -w sfpga01n
+#SBATCH -p general
+#SBATCH -q private
 #SBATCH -c 128
 #SBATCH --mem 200G
 #SBATCH -t 0-02:00:00

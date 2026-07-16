@@ -6,9 +6,8 @@
 # lowers QUBO cost further on the small instance, toward Gurobi's $74.70M.
 # Batching + penalties are kept IDENTICAL to the prior $77.25M low baseline so
 # the only variable is the iteration count.
-#SBATCH -p fpga
-#SBATCH -q public
-#SBATCH -w sfpga01n
+#SBATCH -p general
+#SBATCH -q private
 #SBATCH -c 128
 #SBATCH --mem 200G
 #SBATCH -t 0-08:00:00
