@@ -65,18 +65,26 @@ RUN_DIR="results/medium_adaptive_parallel/med_par"
 SCALE="med"
 mkdir -p "$RUN_DIR"
 JOBID_FULL="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
-sleep 10  # give SLURM a moment to flush accounting for this step
+sleep 10  # let SLURM register the running step
 if command -v seff >/dev/null 2>&1; then
   seff "$JOBID_FULL" > "$RUN_DIR/seff_${SCALE}_${JOBID_FULL}.txt" 2>&1 || true
 fi
-MEM_LINE=$(sacct -j "$JOBID_FULL" \
+# sstat reads the LIVE batch step, so MaxRSS is populated mid-job. sacct only
+# flushes MaxRSS after the step ends, so for a still-running job it returns blank
+# here -- use sstat first for MaxRSS/MaxVMSize and fall back to sacct otherwise.
+SSTAT_LINE=$(sstat -j "${SLURM_JOB_ID}.batch" --format=MaxRSS,MaxVMSize \
+  --units=M --noheader --parsable2 2>/dev/null | head -n1)
+MAXRSS=$(printf '%s' "$SSTAT_LINE" | awk -F'|' '{print $1}')
+MAXVM=$(printf '%s' "$SSTAT_LINE" | awk -F'|' '{print $2}')
+# sacct still supplies ReqMem/Elapsed for a running job (and a MaxRSS fallback).
+SACCT_LINE=$(sacct -j "$JOBID_FULL" \
   --format=JobID,JobName,MaxRSS,MaxVMSize,ReqMem,Elapsed,State \
   --units=M --noheader --parsable2 2>/dev/null \
   | awk -F'|' '$3 != ""' | sort -t'|' -k3 -h | tail -n1)
-MAXRSS=$(printf '%s' "$MEM_LINE" | awk -F'|' '{print $3}')
-MAXVM=$(printf '%s' "$MEM_LINE" | awk -F'|' '{print $4}')
-REQMEM=$(printf '%s' "$MEM_LINE" | awk -F'|' '{print $5}')
-ELAPSED=$(printf '%s' "$MEM_LINE" | awk -F'|' '{print $6}')
+if [[ -z "$MAXRSS" ]]; then MAXRSS=$(printf '%s' "$SACCT_LINE" | awk -F'|' '{print $3}'); fi
+if [[ -z "$MAXVM" ]]; then MAXVM=$(printf '%s' "$SACCT_LINE" | awk -F'|' '{print $4}'); fi
+REQMEM=$(printf '%s' "$SACCT_LINE" | awk -F'|' '{print $5}')
+ELAPSED=$(printf '%s' "$SACCT_LINE" | awk -F'|' '{print $6}')
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
   "${SLURM_ARRAY_JOB_ID}" "${SLURM_ARRAY_TASK_ID}" "$MAXRSS" "$MAXVM" "$REQMEM" "$ELAPSED" \
   >> "$RUN_DIR/slurm_mem_${SCALE}.tsv"

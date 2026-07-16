@@ -1218,14 +1218,22 @@ def evaluate_sample(sample: dict[str, int], energy: float, qubo_meta: dict[str, 
 
 
 class _SqaAdapter:
-    """Wrap SQASampler so beta/trotter are injected into every sample_qubo call."""
+    """Wrap SQASampler so beta/trotter/gamma are injected into every sample_qubo call.
 
-    def __init__(self, sampler: Any, beta: float, trotter: int) -> None:
-        self._s, self._beta, self._trotter = sampler, beta, trotter
+    gamma is the transverse-field strength, the parameter that makes SQA
+    quantum-inspired rather than a trotterized SA. When gamma is None the
+    OpenJij library default is used (unchanged behavior); pass --sqa-gamma to
+    set it explicitly so it is reproducible and reportable.
+    """
+
+    def __init__(self, sampler: Any, beta: float, trotter: int, gamma: float | None = None) -> None:
+        self._s, self._beta, self._trotter, self._gamma = sampler, beta, trotter, gamma
 
     def sample_qubo(self, Q: Any, **kw: Any) -> Any:
         kw.setdefault("beta", self._beta)
         kw.setdefault("trotter", self._trotter)
+        if self._gamma is not None:
+            kw.setdefault("gamma", self._gamma)
         return self._s.sample_qubo(Q, **kw)
 
 
@@ -1233,7 +1241,10 @@ def build_sampler(args: argparse.Namespace) -> Any:
     import openjij  # type: ignore
 
     if getattr(args, "sampler", "sa") == "sqa":
-        return _SqaAdapter(openjij.SQASampler(), float(args.sqa_beta), int(args.sqa_trotter))
+        # Negative sentinel (-1.0) means "use OpenJij's default gamma".
+        gamma_arg = float(getattr(args, "sqa_gamma", -1.0))
+        gamma = gamma_arg if gamma_arg >= 0 else None
+        return _SqaAdapter(openjij.SQASampler(), float(args.sqa_beta), int(args.sqa_trotter), gamma)
     return openjij.SASampler()
 
 
@@ -1924,6 +1935,13 @@ def postprocess_qubo_solution_timed(*args: Any, **kwargs: Any) -> tuple[dict[str
     is restored in a finally block, so this changes no optimization logic.
 
     Returns (final_dict, {"postprocess_seconds": <full call>, "hub_prune_seconds": <prune subset>}).
+
+    CAVEAT (for review): this rebinds this module's global `hub_prune_pass`, so the
+    timing only interposes when postprocess_qubo_solution resolves `hub_prune_pass`
+    via this module's globals (the normal case). If a future caller instead does
+    `from run_aligned_fsl_comparison import hub_prune_pass` and calls that bound
+    name, the shim is bypassed and hub_prune_seconds stays 0.0 (silently, no error).
+    It is diagnostic-only and never alters the optimization result.
     """
     timings = {"postprocess_seconds": 0.0, "hub_prune_seconds": 0.0}
     original_hub_prune = globals()["hub_prune_pass"]
@@ -1961,6 +1979,8 @@ def print_qubo_header(data: dict[str, Any], batches: list[BatchSpec], args: argp
     if args.sampler == "sqa":
         print(f"    sqa beta:               {args.sqa_beta}", flush=True)
         print(f"    sqa trotter:            {args.sqa_trotter}", flush=True)
+        _g = float(getattr(args, "sqa_gamma", -1.0))
+        print(f"    sqa gamma:              {'library-default' if _g < 0 else _g}", flush=True)
     print(f"  base miles:               {data['scalar']['base_miles']}", flush=True)
     print(f"  penalty start miles:      {data['scalar']['penalty_start_miles']}", flush=True)
     print(f"  max service miles:        {data['scalar']['max_service_miles']}", flush=True)
@@ -2374,7 +2394,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--sqa-beta", type=float, default=5.0,
                    help="SQA fixed inverse temperature (only used when --sampler sqa).")
     p.add_argument("--sqa-trotter", type=int, default=8,
-                   help="SQA Trotter slices (only used when --sampler sqa).")
+                   help="SQA Trotter slices (only used when --sampler sqa). "
+                        "Note: each slice replicates the spin system, so trotter=N is ~N x "
+                        "the memory of SA; size --mem/-t accordingly at high scale.")
+    p.add_argument("--sqa-gamma", type=float, default=-1.0,
+                   help="SQA transverse-field strength (only used when --sampler sqa). "
+                        "Default -1.0 means use OpenJij's library default (unchanged behavior); "
+                        "set a value >= 0 to fix it explicitly for reproducible/reportable runs.")
     p.add_argument("--num-reads", type=int, default=100, help="Base OpenJij reads. Bumped from 10 for Tier 1.3.")
     p.add_argument("--num-sweeps", type=int, default=3000, help="OpenJij sweeps per read. Bumped from default for Tier 1.3.")
     p.add_argument("--max-stages", type=int, default=3, help="SA retry stages. Bumped from 2 for Tier 1.3.")
