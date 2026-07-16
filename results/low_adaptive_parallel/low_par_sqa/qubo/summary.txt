@@ -1,0 +1,19 @@
+============================================================================
+QUBO FINAL RESULTS
+============================================================================
+  total cost:                 $77,743,028.10
+  inventory cost:             $8,806,323.98
+  fixed open-hub cost:        $55,500,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $701,400.00
+  assignment transport cost:  $12,735,304.12
+  open hubs:                  111
+  closed hubs:                89
+  stocked hub-part pairs:     43,306
+  hub-zip-part pairings:      115,710
+  structural violations:      0
+  SLA distance violations:    27,097
+  wall time:                  11,558.02s
+  peak/current memory:        2,202.5/39.3 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/low_adaptive_parallel/low_par_sqa/qubo
+============================================================================

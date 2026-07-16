@@ -1,0 +1,38 @@
+>>> host=scc011 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=6
+
+============================================================================
+PARALLEL SOLVE - batch 6/11
+============================================================================
+  dataset:      instances_low
+  demand rows:  10,912
+  est Z vars:   48,082
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/low_adaptive_parallel/low_par_sqa/parallel_work
+============================================================================
+
+=== QUBO Batch 6 | 49 parts | 10,912 demand rows | estimated Z=48,082 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 1.22s | Z=48,082 Y=8,325 X=200 interactions=256,633
+    penalties: C1=2,511,166.55 C2=2,511,166.55 C3=2,511,166.55
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | scale=502,233.3 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 1 | violations C1=1910 C2=750 C3=0 C4=0 | cost=102908843.33
+    adaptive iter 2/5 | scale=502,233.3 | multipliers c1=1.50 c2=1.50 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 2 | violations C1=1965 C2=720 C3=0 C4=0 | cost=102925187.66
+    adaptive iter 3/5 | scale=502,233.3 | multipliers c1=2.25 c2=2.25 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 3 | violations C1=1926 C2=709 C3=0 C4=0 | cost=102925756.47
+    adaptive iter 4/5 | scale=502,233.3 | multipliers c1=3.38 c2=3.38 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 4 | violations C1=1943 C2=728 C3=0 C4=0 | cost=102933382.38
+    adaptive iter 5/5 | scale=502,233.3 | multipliers c1=5.06 c2=5.06 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 5 | violations C1=1937 C2=735 C3=0 C4=0 | cost=102916602.08
+  [2b/3] Adaptive exhausted (5 iters) - running retry-reads fallback with final multipliers
+  [2/3] Sampling QUBO with OpenJij...
+    stage 1/2: sampling 94 reads...
+    stage 1/2: evaluating samples...
+    stage 1 done | samples=94 sample_time=1277.04s eval_time=37.93s best_structural_violations=2725 (C1=2004, C2=721, C3=0) energy=-156016361942.36
+    stage 2/2: sampling 188 reads...
+    stage 2/2: evaluating samples...
+    stage 2 done | samples=188 sample_time=2555.07s eval_time=87.32s best_structural_violations=2665 (C1=1944, C2=721, C3=0) energy=-157160518791.76
+  [3/3] Batch selected | 2635 structural violations | aligned cost=$102,925,756.47 | total_time=10231.72s
+
+  saved batch 6 -> batch_0006.pkl | solve=10233.11s rss_peak=3,433.6 MB (python_tracemalloc=2,036.7 MB) | violations=2635
+>>> slurm mem appended to results/low_adaptive_parallel/low_par_sqa/slurm_mem_low.tsv: jobid=59076053 task=6 MaxRSS= MaxVMSize= ReqMem= Elapsed=

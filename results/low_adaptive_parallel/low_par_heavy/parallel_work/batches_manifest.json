@@ -1,0 +1,105 @@
+{
+  "run_name": "low_par_heavy",
+  "total_batches": 11,
+  "batch_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "batching_signature": {
+    "dataset_dir": "instances_low",
+    "max_service_miles": null,
+    "penalty_start_miles": null,
+    "top_hubs_per_zip": -1,
+    "max_parts_total": -1,
+    "part_batch_size": 1000,
+    "max_z_vars_per_batch": 50000
+  },
+  "batches": [
+    {
+      "batch_id": 1,
+      "num_parts": 71,
+      "num_rows": 11340,
+      "estimated_z_vars": 49879,
+      "note": ""
+    },
+    {
+      "batch_id": 2,
+      "num_parts": 56,
+      "num_rows": 11087,
+      "estimated_z_vars": 49711,
+      "note": ""
+    },
+    {
+      "batch_id": 3,
+      "num_parts": 50,
+      "num_rows": 11116,
+      "estimated_z_vars": 49070,
+      "note": ""
+    },
+    {
+      "batch_id": 4,
+      "num_parts": 60,
+      "num_rows": 11261,
+      "estimated_z_vars": 49596,
+      "note": ""
+    },
+    {
+      "batch_id": 5,
+      "num_parts": 58,
+      "num_rows": 11308,
+      "estimated_z_vars": 49516,
+      "note": ""
+    },
+    {
+      "batch_id": 6,
+      "num_parts": 49,
+      "num_rows": 10912,
+      "estimated_z_vars": 48082,
+      "note": ""
+    },
+    {
+      "batch_id": 7,
+      "num_parts": 53,
+      "num_rows": 11232,
+      "estimated_z_vars": 49149,
+      "note": ""
+    },
+    {
+      "batch_id": 8,
+      "num_parts": 61,
+      "num_rows": 11317,
+      "estimated_z_vars": 49974,
+      "note": ""
+    },
+    {
+      "batch_id": 9,
+      "num_parts": 61,
+      "num_rows": 11326,
+      "estimated_z_vars": 49294,
+      "note": ""
+    },
+    {
+      "batch_id": 10,
+      "num_parts": 58,
+      "num_rows": 11271,
+      "estimated_z_vars": 48929,
+      "note": ""
+    },
+    {
+      "batch_id": 11,
+      "num_parts": 23,
+      "num_rows": 3540,
+      "estimated_z_vars": 15759,
+      "note": ""
+    }
+  ]
+}
