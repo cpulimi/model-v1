@@ -1,18 +1,19 @@
 #!/bin/bash
-# Parallel-batch SOLVE job for instances_low (Option 3), HEAVY iteration budget.
-# One array task per batch. --array is set by low_par_launch.sh.
+# Parallel-batch SOLVE job for instances_low using the SQA sampler.
+# One array task per batch. --array is set by low_par_sqa_launch.sh.
 #
-# Purpose: test whether increasing the SA sampling budget (reads/sweeps/stages)
-# lowers QUBO cost further on the small instance, toward Gurobi's $74.70M.
-# Batching + penalties are kept IDENTICAL to the prior $77.25M low baseline so
-# the only variable is the iteration count.
+# SQA counterpart of low_par_solve.sh: batching + penalties match the SA scripts
+# so the only difference is the sampler backend (SQASampler vs SASampler).
+# SQA replicates the spins across --sqa-trotter slices, so memory is ~trotter x the
+# SA footprint and each read is slower; we grab the whole node (--mem 0) and give a
+# longer wall clock. TEST ON LOW FIRST before attempting med/high (likely OOM/timeout).
 #SBATCH -p fpga
 #SBATCH -q public
 #SBATCH -w sfpga01n
 #SBATCH -c 128
-#SBATCH --mem 200G
-#SBATCH -t 0-08:00:00
-#SBATCH -J low_par_solve
+#SBATCH --mem 0
+#SBATCH -t 0-12:00:00
+#SBATCH -J low_par_sqa_solve
 #SBATCH -o logs/%x_%A_%a.out
 #SBATCH -e logs/%x_%A_%a.err
 
@@ -29,22 +30,26 @@ export PYTHONHASHSEED=0
 echo ">>> host=$(hostname) project=$PROJECT python=$(which python) batch=${SLURM_ARRAY_TASK_ID}"
 
 # IMPORTANT: --run-name, --output-dir, and all batching/QUBO flags MUST be
-# identical here and in low_par_merge.sh so batch ids and seeds line up.
-# HEAVY budget: num-reads 500, num-sweeps 12000, max-stages 5 (vs baseline
-# 100/3000/3). Batching (part-batch 1000 / max-z 50000) and penalties match
-# the prior low baseline so the comparison isolates the iteration effect.
+# identical here and in low_par_sqa_merge.sh so batch ids and seeds line up.
+# SQA: --sampler sqa with an EXPLICIT --sqa-gamma (transverse field) so the
+# quantum-inspired parameter is reproducible/reportable rather than the library
+# default. num-reads/num-sweeps are intentionally conservative for a first SQA run.
 python run_parallel_batches.py \
   --mode solve \
   --batch-id ${SLURM_ARRAY_TASK_ID} \
   --dataset-dir instances_low \
-  --run-name low_par_heavy \
+  --run-name low_par_sqa \
   --output-dir results/low_adaptive_parallel \
   --seed 42 \
   --part-batch-size 1000 \
   --max-z-vars-per-batch 50000 \
-  --num-reads 500 \
-  --num-sweeps 12000 \
-  --max-stages 5 \
+  --sampler sqa \
+  --sqa-beta 5.0 \
+  --sqa-trotter 8 \
+  --sqa-gamma 1.0 \
+  --num-reads 30 \
+  --num-sweeps 1000 \
+  --max-stages 2 \
   --retry-reads-boost 2.0 \
   --penalty-mode adaptive \
   --min-penalty 50000.0 \
@@ -58,7 +63,7 @@ python run_parallel_batches.py \
 # Captures SLURM's authoritative MaxRSS as an outside cross-check against the
 # rss_peak_mb recorded in each batch pkl. Instrumentation only; joined by merge on
 # (jobid, taskid) where jobid=SLURM_ARRAY_JOB_ID and taskid=SLURM_ARRAY_TASK_ID.
-RUN_DIR="results/low_adaptive_parallel/low_par_heavy"
+RUN_DIR="results/low_adaptive_parallel/low_par_sqa"
 SCALE="low"
 mkdir -p "$RUN_DIR"
 JOBID_FULL="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"

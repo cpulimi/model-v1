@@ -1,8 +1,9 @@
 #!/bin/bash
 # Parallel-batch SOLVE job for instances_high (Option 3). One array task per batch.
 # --array is set by high_par_launch.sh (or pass --array=1-N on the sbatch line).
-#SBATCH -p general
-#SBATCH -q private
+#SBATCH -p fpga
+#SBATCH -q public
+#SBATCH -w sfpga01n
 #SBATCH -c 32
 #SBATCH --mem 100G
 #SBATCH -t 0-08:00:00

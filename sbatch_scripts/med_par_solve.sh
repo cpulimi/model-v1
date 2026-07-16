@@ -11,8 +11,9 @@
 #   sbatch --dependency=afterok:$sid sbatch_scripts/med_par_merge.sh
 #
 # --array is set by med_par_launch.sh (or pass -t on sbatch command line).
-#SBATCH -p lightwork
+#SBATCH -p fpga
 #SBATCH -q public
+#SBATCH -w sfpga01n
 #SBATCH -c 16
 #SBATCH --mem 64G
 #SBATCH -t 0-06:00:00

@@ -1,18 +1,18 @@
 #!/bin/bash
-# Parallel-batch MERGE job for instances_high (Option 3). Runs ONCE after all
-# solve array tasks finish (afterok dependency). Combines every solved batch,
-# runs the SAME hub-prune/post-process as the sequential solver, and writes the
-# final qubo/ outputs + summary.json.
+# Parallel-batch MERGE job for instances_low, SQA variant.
+# Runs ONCE after all SQA solve array tasks finish (afterok dependency). Combines
+# every solved batch, runs the SAME hub-prune/post-process as the sequential
+# solver, and writes the final qubo/ outputs + summary.json.
 #
-# Every flag below MUST match high_par_solve.sh (same run-name, output-dir,
-# dataset, and batching flags) so it loads the right batch checkpoints.
+# Every flag below MUST match low_par_sqa_solve.sh (same run-name, output-dir,
+# dataset, batching, and sampler flags) so it loads the right batch checkpoints.
 #SBATCH -p fpga
 #SBATCH -q public
 #SBATCH -w sfpga01n
-#SBATCH -c 32
-#SBATCH --mem 100G
-#SBATCH -t 0-10:00:00
-#SBATCH -J high_par_merge
+#SBATCH -c 128
+#SBATCH --mem 0
+#SBATCH -t 0-02:00:00
+#SBATCH -J low_par_sqa_merge
 #SBATCH -o logs/%x_%j.out
 #SBATCH -e logs/%x_%j.err
 
@@ -30,21 +30,23 @@ echo ">>> host=$(hostname) project=$PROJECT python=$(which python)"
 
 python run_parallel_batches.py \
   --mode merge \
-  --dataset-dir instances_high \
-  --run-name high_par \
-  --output-dir results/high_adaptive_parallel \
+  --dataset-dir instances_low \
+  --run-name low_par_sqa \
+  --output-dir results/low_adaptive_parallel \
   --seed 42 \
   --part-batch-size 1000 \
-  --max-z-vars-per-batch 600000 \
+  --max-z-vars-per-batch 50000 \
+  --sampler sqa \
+  --sqa-beta 5.0 \
+  --sqa-trotter 8 \
+  --sqa-gamma 1.0 \
   --num-reads 30 \
-  --num-sweeps 500 \
+  --num-sweeps 1000 \
   --max-stages 2 \
   --retry-reads-boost 2.0 \
   --penalty-mode adaptive \
   --min-penalty 50000.0 \
   --constraint-multiplier 5.0 \
-  --constraint-multiplier-c2 3.0 \
-  --constraint-multiplier-c3 2.0 \
   --c4-mode auto \
   --adaptive-penalty-mode within-batch \
   --adaptive-penalty-iterations 5 \
@@ -54,8 +56,8 @@ python run_parallel_batches.py \
 # --- additive SLURM memory accounting (does NOT affect the merge above) ---
 # Captures SLURM's authoritative MaxRSS for the merge job as an outside
 # cross-check against merge_rss_peak_mb. Instrumentation only.
-RUN_DIR="results/high_adaptive_parallel/high_par"
-SCALE="high"
+RUN_DIR="results/low_adaptive_parallel/low_par_sqa"
+SCALE="low"
 mkdir -p "$RUN_DIR"
 JOBID="${SLURM_JOB_ID}"
 sleep 10  # let SLURM register the running step
