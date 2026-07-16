@@ -46,3 +46,28 @@ python run_parallel_batches.py \
   --adaptive-penalty-mode within-batch \
   --adaptive-penalty-iterations 5 \
   --adaptive-penalty-growth 1.5
+
+# --- additive SLURM memory accounting (does NOT affect the solve above) ---
+# Captures SLURM's authoritative MaxRSS as an outside cross-check against the
+# rss_peak_mb recorded in each batch pkl. Instrumentation only; joined by merge on
+# (jobid, taskid) where jobid=SLURM_ARRAY_JOB_ID and taskid=SLURM_ARRAY_TASK_ID.
+RUN_DIR="results/high_adaptive_parallel/high_par"
+SCALE="high"
+mkdir -p "$RUN_DIR"
+JOBID_FULL="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+sleep 10  # give SLURM a moment to flush accounting for this step
+if command -v seff >/dev/null 2>&1; then
+  seff "$JOBID_FULL" > "$RUN_DIR/seff_${SCALE}_${JOBID_FULL}.txt" 2>&1 || true
+fi
+MEM_LINE=$(sacct -j "$JOBID_FULL" \
+  --format=JobID,JobName,MaxRSS,MaxVMSize,ReqMem,Elapsed,State \
+  --units=M --noheader --parsable2 2>/dev/null \
+  | awk -F'|' '$3 != ""' | sort -t'|' -k3 -h | tail -n1)
+MAXRSS=$(printf '%s' "$MEM_LINE" | awk -F'|' '{print $3}')
+MAXVM=$(printf '%s' "$MEM_LINE" | awk -F'|' '{print $4}')
+REQMEM=$(printf '%s' "$MEM_LINE" | awk -F'|' '{print $5}')
+ELAPSED=$(printf '%s' "$MEM_LINE" | awk -F'|' '{print $6}')
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+  "${SLURM_ARRAY_JOB_ID}" "${SLURM_ARRAY_TASK_ID}" "$MAXRSS" "$MAXVM" "$REQMEM" "$ELAPSED" \
+  >> "$RUN_DIR/slurm_mem_${SCALE}.tsv"
+echo ">>> slurm mem appended to $RUN_DIR/slurm_mem_${SCALE}.tsv: jobid=${SLURM_ARRAY_JOB_ID} task=${SLURM_ARRAY_TASK_ID} MaxRSS=$MAXRSS MaxVMSize=$MAXVM ReqMem=$REQMEM Elapsed=$ELAPSED"

@@ -117,6 +117,8 @@ class BatchResult:
     final_penalty_multipliers: dict[str, float] = field(
         default_factory=lambda: {"c1": 1.0, "c2": 1.0, "c3": 1.0, "c4": 1.0}
     )
+    adaptive_iteration_log: list[dict] = field(default_factory=list)
+    adaptive_exit_reason: str = ""
 
 
 def now_stamp() -> str:
@@ -963,18 +965,40 @@ def penalty_weights(
     data: dict[str, Any],
     args: argparse.Namespace,
     multipliers: dict[str, float] | None = None,
-) -> dict[str, float]:
+    return_diagnostics: bool = False,
+) -> dict[str, float] | tuple[dict[str, float], dict[str, dict[str, Any]]]:
     scale = estimate_objective_scale(batch_df, data)
     out: dict[str, float] = {}
+    diagnostics: dict[str, dict[str, Any]] = {}
     for c in ("c1", "c2", "c3", "c4"):
         override_min = float(getattr(args, f"min_penalty_{c}", -1.0))
         override_mult = float(getattr(args, f"constraint_multiplier_{c}", -1.0))
         min_pen = override_min if override_min >= 0 else float(args.min_penalty)
         mult = override_mult if override_mult >= 0 else float(args.constraint_multiplier)
+        scaled_value = float(scale) * float(mult)
         if args.penalty_mode == "fixed":
             out[c] = float(min_pen)
         else:
-            out[c] = max(float(min_pen), float(scale) * float(mult))
+            out[c] = max(float(min_pen), scaled_value)
+
+        if return_diagnostics:
+            # "floor" means the min_penalty floor won; "scaled" means scale*mult won.
+            # In fixed mode the floor is used unconditionally.
+            if args.penalty_mode == "fixed" or float(min_pen) >= scaled_value:
+                binding_branch = "floor"
+            else:
+                binding_branch = "scaled"
+            adaptive_mult = float(multipliers[c]) if (multipliers is not None and c in multipliers) else 1.0
+            diagnostics[c] = {
+                "objective_scale": float(scale),
+                "min_pen": float(min_pen),
+                "mult": float(mult),
+                "scaled_value": float(scaled_value),
+                "chosen_value": float(out[c]),
+                "binding_branch": binding_branch,
+                "adaptive_mult": float(adaptive_mult),
+                "final_value": float(out[c]) * float(adaptive_mult),
+            }
 
     # Adaptive multipliers (within-batch adaptive penalty). When None, the
     # returned penalties are bit-identical to the static behavior.
@@ -982,6 +1006,9 @@ def penalty_weights(
         for c in ("c1", "c2", "c3", "c4"):
             if c in multipliers:
                 out[c] = out[c] * float(multipliers[c])
+
+    if return_diagnostics:
+        return out, diagnostics
     return out
 
 
@@ -1190,6 +1217,26 @@ def evaluate_sample(sample: dict[str, int], energy: float, qubo_meta: dict[str, 
     }
 
 
+class _SqaAdapter:
+    """Wrap SQASampler so beta/trotter are injected into every sample_qubo call."""
+
+    def __init__(self, sampler: Any, beta: float, trotter: int) -> None:
+        self._s, self._beta, self._trotter = sampler, beta, trotter
+
+    def sample_qubo(self, Q: Any, **kw: Any) -> Any:
+        kw.setdefault("beta", self._beta)
+        kw.setdefault("trotter", self._trotter)
+        return self._s.sample_qubo(Q, **kw)
+
+
+def build_sampler(args: argparse.Namespace) -> Any:
+    import openjij  # type: ignore
+
+    if getattr(args, "sampler", "sa") == "sqa":
+        return _SqaAdapter(openjij.SQASampler(), float(args.sqa_beta), int(args.sqa_trotter))
+    return openjij.SASampler()
+
+
 def suggested_num_reads(num_z: int, args: argparse.Namespace) -> int:
     if num_z <= 0:
         return max(1, int(args.num_reads))
@@ -1204,18 +1251,24 @@ def run_adaptive_penalty_loop(
     args: argparse.Namespace,
     sampler: Any,
     base_reads: int,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, float], int, bool]:
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, float], int, bool, list[dict], str]:
     """Within-batch adaptive penalty: iteratively grow penalties for violated
     constraints, rebuild the QUBO, resample. Returns (best_eval, qubo_meta_final,
-    multipliers_final, adaptive_iterations_used, was_feasible).
+    multipliers_final, adaptive_iterations_used, was_feasible, iteration_log,
+    exit_reason).
     """
     multipliers = {"c1": 1.0, "c2": 1.0, "c3": 1.0, "c4": 1.0}
     growth = float(args.adaptive_penalty_growth)
     max_iter = int(args.adaptive_penalty_iterations)
+    stagnation_patience = int(getattr(args, "adaptive_penalty_stagnation_patience", 0))
     best_eval: dict[str, Any] | None = None
     qubo_meta_final: dict[str, Any] | None = None
     adaptive_iter_used = 0
     was_feasible = False
+    iteration_log: list[dict] = []
+    exit_reason = "max_iterations"
+    best_total_violations: int | None = None
+    no_improve_count = 0
 
     for iteration in range(1, max_iter + 1):
         adaptive_iter_used = iteration
@@ -1225,17 +1278,27 @@ def run_adaptive_penalty_loop(
         qubo_meta_final = qubo_meta
         Q = qubo_meta["Q"]
 
+        # Deterministic recompute of the penalty resolution for this iteration's
+        # multipliers (no sampling; cannot affect solution values). This doubles as
+        # explicit confirmation that the QUBO was rebuilt with these penalties.
+        _, diag = penalty_weights(batch_df, data, args, multipliers=multipliers, return_diagnostics=True)
+        objective_scale = float(diag["c1"]["objective_scale"])
+        num_vars = len(qubo_meta["z_name"]) + len(qubo_meta["y_name"]) + len(qubo_meta["x_name"])
+        num_interactions = len(Q)
+
         # Single sampling pass at base reads (no retry-reads escalation here).
         sample_kwargs: dict[str, Any] = {"num_reads": base_reads}
         if args.seed is not None and int(args.seed) >= 0:
             sample_kwargs["seed"] = int(args.seed) + batch.batch_id * 1000 + iteration
         if int(args.num_sweeps or 0) > 0:
             sample_kwargs["num_sweeps"] = int(args.num_sweeps)
+        seed_used = sample_kwargs.get("seed", None)
 
+        binding_summary = ",".join(f"{c}={diag[c]['binding_branch']}" for c in ("c1", "c2", "c3", "c4"))
         print(
-            f"    adaptive iter {iteration}/{max_iter} | "
+            f"    adaptive iter {iteration}/{max_iter} | scale={objective_scale:,.1f} | "
             f"multipliers c1={multipliers['c1']:.2f} c2={multipliers['c2']:.2f} "
-            f"c3={multipliers['c3']:.2f}",
+            f"c3={multipliers['c3']:.2f} c4={multipliers['c4']:.2f} | binding[{binding_summary}]",
             flush=True,
         )
         response = sampler.sample_qubo(Q, **sample_kwargs)
@@ -1285,14 +1348,56 @@ def run_adaptive_penalty_loop(
 
         print(
             f"    adaptive iter {iteration} | violations C1={iter_best['c1']} "
-            f"C2={iter_best['c2']} C3={iter_best['c3']} | "
+            f"C2={iter_best['c2']} C3={iter_best['c3']} C4={iter_best.get('c4', 0)} | "
             f"cost={iter_best['cost']:.2f}",
             flush=True,
         )
 
+        # Record this iteration. exit_reason is filled on the final iteration only.
+        log_row: dict[str, Any] = {
+            "batch_id": int(batch.batch_id),
+            "iteration": int(iteration),
+            "objective_scale": objective_scale,
+            "total_violations": int(iter_best["total_violations"]),
+            "cost": float(iter_best["cost"]),
+            "energy": float(iter_best["energy"]),
+            "num_vars": int(num_vars),
+            "num_interactions": int(num_interactions),
+            "seed_used": seed_used,
+            "num_reads": int(base_reads),
+            "exit_reason": "",
+        }
+        for c in ("c1", "c2", "c3", "c4"):
+            log_row[f"min_pen_{c}"] = float(diag[c]["min_pen"])
+            log_row[f"scaled_{c}"] = float(diag[c]["scaled_value"])
+            log_row[f"chosen_{c}"] = float(diag[c]["chosen_value"])
+            log_row[f"binding_branch_{c}"] = str(diag[c]["binding_branch"])
+            log_row[f"mult_{c}"] = float(multipliers[c])
+            log_row[f"viol_{c}"] = int(iter_best.get(c, 0))
+        iteration_log.append(log_row)
+
         if int(iter_best["total_violations"]) == 0:
             was_feasible = True
+            exit_reason = "feasible"
+            iteration_log[-1]["exit_reason"] = exit_reason
             print(f"    adaptive feasible at iter {iteration}", flush=True)
+            break
+
+        # Stagnation exit (opt-in, default OFF). Placed AFTER the feasibility break
+        # so feasibility always wins first; with patience=0 this is unreachable.
+        if best_total_violations is None or int(iter_best["total_violations"]) < best_total_violations:
+            best_total_violations = int(iter_best["total_violations"])
+            no_improve_count = 0
+        else:
+            no_improve_count += 1
+        if stagnation_patience > 0 and no_improve_count >= stagnation_patience:
+            exit_reason = "stagnated"
+            iteration_log[-1]["exit_reason"] = exit_reason
+            print(
+                f"    adaptive stagnated at iter {iteration} "
+                f"(no strict improvement for {no_improve_count} iters)",
+                flush=True,
+            )
             break
 
         # Grow multipliers for violated constraints only.
@@ -1305,7 +1410,11 @@ def run_adaptive_penalty_loop(
         if int(iter_best.get("c4", 0)) > 0:
             multipliers["c4"] *= growth
 
-    return best_eval, qubo_meta_final, multipliers, adaptive_iter_used, was_feasible
+    # Loop exhausted without an early break -> max_iterations.
+    if exit_reason == "max_iterations" and iteration_log:
+        iteration_log[-1]["exit_reason"] = exit_reason
+
+    return best_eval, qubo_meta_final, multipliers, adaptive_iter_used, was_feasible, iteration_log, exit_reason
 
 
 def solve_qubo_batch(batch: BatchSpec, active: pd.DataFrame, data: dict[str, Any], args: argparse.Namespace) -> BatchResult:
@@ -1347,7 +1456,7 @@ def solve_qubo_batch(batch: BatchSpec, active: pd.DataFrame, data: dict[str, Any
         flush=True,
     )
 
-    sampler = openjij.SASampler()
+    sampler = build_sampler(args)
     base_reads = suggested_num_reads(num_z, args)
     best_eval: dict[str, Any] | None = None
     sample_seconds = 0.0
@@ -1356,6 +1465,8 @@ def solve_qubo_batch(batch: BatchSpec, active: pd.DataFrame, data: dict[str, Any
     adaptive_iters_used = 0
     adaptive_was_feasible = False
     final_multipliers = {"c1": 1.0, "c2": 1.0, "c3": 1.0, "c4": 1.0}
+    adaptive_iteration_log: list[dict] = []
+    adaptive_exit_reason = ""
 
     # Within-batch adaptive penalty phase (runs before the retry-reads loop).
     if args.adaptive_penalty_mode == "within-batch":
@@ -1367,6 +1478,8 @@ def solve_qubo_batch(batch: BatchSpec, active: pd.DataFrame, data: dict[str, Any
             final_multipliers,
             adaptive_iters_used,
             adaptive_was_feasible,
+            adaptive_iteration_log,
+            adaptive_exit_reason,
         ) = run_adaptive_penalty_loop(batch, batch_df, data, args, sampler, base_reads)
         sample_seconds += time.time() - t_adapt
         Q = qubo_meta["Q"]
@@ -1487,6 +1600,8 @@ def solve_qubo_batch(batch: BatchSpec, active: pd.DataFrame, data: dict[str, Any
         adaptive_iterations_used=int(adaptive_iters_used),
         adaptive_was_feasible=bool(adaptive_was_feasible),
         final_penalty_multipliers=dict(final_multipliers),
+        adaptive_iteration_log=list(adaptive_iteration_log),
+        adaptive_exit_reason=str(adaptive_exit_reason),
     )
 
 
@@ -1534,6 +1649,7 @@ def batch_adaptive_summary_dataframe(results: list[BatchResult]) -> pd.DataFrame
                 "batch_id": r.batch_id,
                 "adaptive_iterations_used": int(r.adaptive_iterations_used),
                 "adaptive_was_feasible": bool(r.adaptive_was_feasible),
+                "adaptive_exit_reason": str(r.adaptive_exit_reason),
                 "final_mult_c1": float(mult.get("c1", 1.0)),
                 "final_mult_c2": float(mult.get("c2", 1.0)),
                 "final_mult_c3": float(mult.get("c3", 1.0)),
@@ -1541,6 +1657,11 @@ def batch_adaptive_summary_dataframe(results: list[BatchResult]) -> pd.DataFrame
             }
         )
     return pd.DataFrame(rows)
+
+
+def adaptive_iteration_log_dataframe(results: list[BatchResult]) -> pd.DataFrame:
+    """Flatten every batch's per-iteration adaptive log into one DataFrame."""
+    return pd.DataFrame([row for r in results for row in r.adaptive_iteration_log])
 
 
 def aggregate_raw_results(results: list[BatchResult]) -> dict[str, Any]:
@@ -1794,6 +1915,36 @@ def postprocess_qubo_solution(
     }
 
 
+def postprocess_qubo_solution_timed(*args: Any, **kwargs: Any) -> tuple[dict[str, Any], dict[str, float]]:
+    """Additive diagnostic wrapper around postprocess_qubo_solution.
+
+    Runs the EXACT same postprocess (identical result), but temporarily swaps the
+    module-global hub_prune_pass for a timing shim so the hub-prune sub-portion can
+    be measured separately from the rest of the postprocess. The original function
+    is restored in a finally block, so this changes no optimization logic.
+
+    Returns (final_dict, {"postprocess_seconds": <full call>, "hub_prune_seconds": <prune subset>}).
+    """
+    timings = {"postprocess_seconds": 0.0, "hub_prune_seconds": 0.0}
+    original_hub_prune = globals()["hub_prune_pass"]
+
+    def _timed_hub_prune(*a: Any, **k: Any) -> Any:
+        t = time.perf_counter()
+        try:
+            return original_hub_prune(*a, **k)
+        finally:
+            timings["hub_prune_seconds"] += time.perf_counter() - t
+
+    globals()["hub_prune_pass"] = _timed_hub_prune
+    t0 = time.perf_counter()
+    try:
+        result = postprocess_qubo_solution(*args, **kwargs)
+    finally:
+        globals()["hub_prune_pass"] = original_hub_prune
+        timings["postprocess_seconds"] = time.perf_counter() - t0
+    return result, timings
+
+
 def print_qubo_header(data: dict[str, Any], batches: list[BatchSpec], args: argparse.Namespace, run_dir: Path) -> None:
     avg_hubs = sum(len(v) for v in data["zip_to_hubs"].values()) / max(1, len(data["zip_to_hubs"]))
     print("\n" + "=" * 76, flush=True)
@@ -1806,6 +1957,10 @@ def print_qubo_header(data: dict[str, Any], batches: list[BatchSpec], args: argp
     print(f"  candidate hubs/zip:       {'all' if data['top_hubs_per_zip'] is None else data['top_hubs_per_zip']} (avg {avg_hubs:.2f})", flush=True)
     print(f"  total QUBO batches:       {len(batches):,}", flush=True)
     print(f"  max Z vars/batch:         {args.max_z_vars_per_batch:,}", flush=True)
+    print(f"  sampler:                  {args.sampler}", flush=True)
+    if args.sampler == "sqa":
+        print(f"    sqa beta:               {args.sqa_beta}", flush=True)
+        print(f"    sqa trotter:            {args.sqa_trotter}", flush=True)
     print(f"  base miles:               {data['scalar']['base_miles']}", flush=True)
     print(f"  penalty start miles:      {data['scalar']['penalty_start_miles']}", flush=True)
     print(f"  max service miles:        {data['scalar']['max_service_miles']}", flush=True)
@@ -1888,6 +2043,9 @@ def run_qubo_solver(args: argparse.Namespace) -> dict[str, Any]:
     if args.adaptive_penalty_mode == "within-batch":
         batch_adaptive_summary_dataframe(results).to_csv(
             run_dir / "batch_adaptive_summary.csv", index=False
+        )
+        adaptive_iteration_log_dataframe(results).to_csv(
+            run_dir / "adaptive_iteration_log.csv", index=False
         )
 
     assignment_rows_dataframe(raw["assignments"], data).to_csv(run_dir / "raw_qubo_hub_zip_part_pairings.csv", index=False)
@@ -2211,6 +2369,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # QUBO controls. Defaults bumped for Tier 1+2+3 changes (see hub-prune post-pass below).
     p.add_argument("--part-batch-size", type=int, default=1000, help="Soft part count per batch. Bumped from 200 to consolidate batches and reduce per-batch X duplication.")
     p.add_argument("--max-z-vars-per-batch", type=int, default=50000, help="Hard Z cap. Bumped from 20000 to reduce batch count.")
+    p.add_argument("--sampler", choices=["sa", "sqa"], default="sa",
+                   help="Sampler backend: sa=OpenJij SASampler (default), sqa=OpenJij SQASampler.")
+    p.add_argument("--sqa-beta", type=float, default=5.0,
+                   help="SQA fixed inverse temperature (only used when --sampler sqa).")
+    p.add_argument("--sqa-trotter", type=int, default=8,
+                   help="SQA Trotter slices (only used when --sampler sqa).")
     p.add_argument("--num-reads", type=int, default=100, help="Base OpenJij reads. Bumped from 10 for Tier 1.3.")
     p.add_argument("--num-sweeps", type=int, default=3000, help="OpenJij sweeps per read. Bumped from default for Tier 1.3.")
     p.add_argument("--max-stages", type=int, default=3, help="SA retry stages. Bumped from 2 for Tier 1.3.")
@@ -2244,6 +2408,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Where initial penalties come from. 'batch-scale'=current "
                         "penalty_weights() behavior. 'external'=hook for cross-batch "
                         "(not used in v1).")
+    p.add_argument("--adaptive-penalty-stagnation-patience", type=int, default=0,
+                   help="Break the adaptive loop if total_violations has not strictly "
+                        "improved for N consecutive iterations. 0 = disabled (current behavior).")
 
     return p.parse_args(argv)
 
