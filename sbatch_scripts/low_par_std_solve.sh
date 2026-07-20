@@ -12,7 +12,7 @@
 #SBATCH -q private
 #SBATCH -c 128
 #SBATCH --mem 200G
-#SBATCH -t 0-08:00:00
+#SBATCH -t 7-00:00:00
 #SBATCH -J low_par_std_solve
 #SBATCH -o logs/%x_%A_%a.out
 #SBATCH -e logs/%x_%A_%a.err
