@@ -10,7 +10,7 @@
 #SBATCH -q private
 #SBATCH -c 128
 #SBATCH --mem 200G
-#SBATCH -t 0-02:00:00
+#SBATCH -t 7-00:00:00
 #SBATCH -J low_par_std_merge
 #SBATCH -o logs/%x_%j.out
 #SBATCH -e logs/%x_%j.err
