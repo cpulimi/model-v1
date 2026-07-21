@@ -60,7 +60,7 @@ python run_parallel_batches.py \
 # Captures SLURM's authoritative MaxRSS as an outside cross-check against the
 # rss_peak_mb recorded in each batch pkl. Instrumentation only; joined by merge on
 # (jobid, taskid) where jobid=SLURM_ARRAY_JOB_ID and taskid=SLURM_ARRAY_TASK_ID.
-RUN_DIR="results/low_std_comparison/low_par_std_sa"
+RUN_DIR="results/low_sa30/low_par_sa30"
 SCALE="low"
 mkdir -p "$RUN_DIR"
 JOBID_FULL="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
