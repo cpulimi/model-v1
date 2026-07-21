@@ -1,7 +1,8 @@
 #!/bin/bash
-# One-shot launcher for the SA half of the matched-budget SA-vs-SQA comparison
-# on instances_low, STANDARD budget (reads 100 / sweeps 3000 / stages 3).
-# Writes to the NEW results/low_std_comparison folder (earlier runs untouched).
+# One-shot launcher for the SA-30 reproduction run on instances_low
+# (SA sampler, reads 30 / sweeps 500 / stages 2).
+# Writes to the NEW results/low_sa30 folder so earlier runs (low_std_comparison,
+# low_par_heavy, low_par_sqa) are left untouched.
 #
 # Run this ON THE LOGIN NODE (it submits jobs, it is not itself an sbatch job):
 #     bash sbatch_scripts/low_par_std_launch.sh
