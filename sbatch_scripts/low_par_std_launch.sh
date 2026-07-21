@@ -18,8 +18,8 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 DATASET=instances_low
-RUN_NAME=low_par_std_sa
-OUTDIR=results/low_std_comparison
+RUN_NAME=low_par_sa30
+OUTDIR=results/low_sa30
 
 # These split flags MUST match the batching flags inside low_par_std_solve.sh.
 PART_BATCH_SIZE=1000
