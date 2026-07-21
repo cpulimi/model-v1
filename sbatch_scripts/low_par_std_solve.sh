@@ -31,14 +31,15 @@ echo ">>> host=$(hostname) project=$PROJECT python=$(which python) batch=${SLURM
 
 # IMPORTANT: --run-name, --output-dir, and all batching/QUBO flags MUST be
 # identical here and in low_par_std_merge.sh so batch ids and seeds line up.
-# STANDARD budget: num-reads 100, num-sweeps 3000, max-stages 3. These MUST
-# match low_par_sqa_std_solve.sh exactly so the only variable is the sampler.
+# SA-30 reproduction run: num-reads 30, num-sweeps 500, max-stages 2.
+# Writes to results/low_sa30 (run-name low_par_sa30) so the earlier
+# results/low_std_comparison SA-std (100/3000/3) run is NOT overwritten.
 python run_parallel_batches.py \
   --mode solve \
   --batch-id ${SLURM_ARRAY_TASK_ID} \
   --dataset-dir instances_low \
-  --run-name low_par_std_sa \
-  --output-dir results/low_std_comparison \
+  --run-name low_par_sa30 \
+  --output-dir results/low_sa30 \
   --seed 42 \
   --part-batch-size 1000 \
   --max-z-vars-per-batch 50000 \
