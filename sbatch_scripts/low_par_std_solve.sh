@@ -1,13 +1,12 @@
 #!/bin/bash
-# Parallel-batch SOLVE job for instances_low using the SA sampler at the
-# STANDARD budget (reads 100 / sweeps 3000 / stages 3).
+# Parallel-batch SOLVE job for instances_low using the SA sampler,
+# SA-30 reproduction budget (reads 30 / sweeps 500 / stages 2).
 # One array task per batch. --array is set by low_par_std_launch.sh.
 #
-# This is the SA half of a matched-budget SA-vs-SQA comparison. Its SQA
-# counterpart (low_par_sqa_std_solve.sh) uses IDENTICAL batching, penalties,
-# reads, sweeps, and stages -- the ONLY difference is the sampler backend.
-# Results land in a NEW output dir (results/low_std_comparison) so the earlier
-# low_par_heavy / low_par_sqa runs are left untouched.
+# Reproduces the historical low 30-read condition with the current code, to
+# check it against the SA-std (100/3000/3) run. Results land in a NEW output
+# dir (results/low_sa30) so the earlier results/low_std_comparison,
+# low_par_heavy, and low_par_sqa runs are left untouched.
 #SBATCH -p general
 #SBATCH -q private
 #SBATCH -c 128
