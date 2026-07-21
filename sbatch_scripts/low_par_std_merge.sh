@@ -30,8 +30,8 @@ echo ">>> host=$(hostname) project=$PROJECT python=$(which python)"
 python run_parallel_batches.py \
   --mode merge \
   --dataset-dir instances_low \
-  --run-name low_par_std_sa \
-  --output-dir results/low_std_comparison \
+  --run-name low_par_sa30 \
+  --output-dir results/low_sa30 \
   --seed 42 \
   --part-batch-size 1000 \
   --max-z-vars-per-batch 50000 \
