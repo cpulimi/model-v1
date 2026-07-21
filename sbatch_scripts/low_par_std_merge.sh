@@ -36,9 +36,9 @@ python run_parallel_batches.py \
   --part-batch-size 1000 \
   --max-z-vars-per-batch 50000 \
   --sampler sa \
-  --num-reads 100 \
-  --num-sweeps 3000 \
-  --max-stages 3 \
+  --num-reads 30 \
+  --num-sweeps 500 \
+  --max-stages 2 \
   --retry-reads-boost 2.0 \
   --penalty-mode adaptive \
   --min-penalty 50000.0 \
