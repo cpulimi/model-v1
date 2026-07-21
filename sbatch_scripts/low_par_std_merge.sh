@@ -52,7 +52,7 @@ python run_parallel_batches.py \
 # --- additive SLURM memory accounting (does NOT affect the merge above) ---
 # Captures SLURM's authoritative MaxRSS for the merge job as an outside
 # cross-check against merge_rss_peak_mb. Instrumentation only.
-RUN_DIR="results/low_std_comparison/low_par_std_sa"
+RUN_DIR="results/low_sa30/low_par_sa30"
 SCALE="low"
 mkdir -p "$RUN_DIR"
 JOBID="${SLURM_JOB_ID}"
