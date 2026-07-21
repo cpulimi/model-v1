@@ -1,0 +1,29 @@
+>>> host=scc028 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=6
+
+============================================================================
+PARALLEL SOLVE - batch 6/11
+============================================================================
+  dataset:      instances_low
+  demand rows:  10,912
+  est Z vars:   48,082
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/low_std_comparison/low_par_std_sqa/parallel_work
+============================================================================
+
+=== QUBO Batch 6 | 49 parts | 10,912 demand rows | estimated Z=48,082 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 1.23s | Z=48,082 Y=8,325 X=200 interactions=256,633
+    penalties: C1=2,511,166.55 C2=2,511,166.55 C3=2,511,166.55
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | scale=502,233.3 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 1 | violations C1=1796 C2=665 C3=0 C4=0 | cost=102883696.37
+    adaptive iter 2/5 | scale=502,233.3 | multipliers c1=1.50 c2=1.50 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 2 | violations C1=1860 C2=714 C3=0 C4=0 | cost=102890186.99
+    adaptive iter 3/5 | scale=502,233.3 | multipliers c1=2.25 c2=2.25 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 3 | violations C1=1882 C2=683 C3=0 C4=0 | cost=102909220.97
+    adaptive iter 4/5 | scale=502,233.3 | multipliers c1=3.38 c2=3.38 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 4 | violations C1=1872 C2=708 C3=0 C4=0 | cost=102896028.34
+    adaptive iter 5/5 | scale=502,233.3 | multipliers c1=5.06 c2=5.06 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 5 | violations C1=1865 C2=673 C3=0 C4=0 | cost=102915561.53
+  [2b/3] Adaptive exhausted (5 iters) - running retry-reads fallback with final multipliers
+  [2/3] Sampling QUBO with OpenJij...
+    stage 1/3: sampling 311 reads...

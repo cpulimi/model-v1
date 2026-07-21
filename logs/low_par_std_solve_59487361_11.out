@@ -1,0 +1,24 @@
+>>> host=scc028 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=11
+
+============================================================================
+PARALLEL SOLVE - batch 11/11
+============================================================================
+  dataset:      instances_low
+  demand rows:  3,540
+  est Z vars:   15,759
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/low_std_comparison/low_par_std_sa/parallel_work
+============================================================================
+
+=== QUBO Batch 11 | 23 parts | 3,540 demand rows | estimated Z=15,759 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 0.40s | Z=15,759 Y=3,684 X=200 interactions=86,531
+    penalties: C1=2,516,848.90 C2=2,516,848.90 C3=2,516,848.90
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | scale=503,369.8 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 1 | violations C1=0 C2=0 C3=0 C4=0 | cost=101385011.40
+    adaptive feasible at iter 1
+  [2b/3] Adaptive succeeded - skipping retry-reads fallback
+  [3/3] Batch selected | OK | aligned cost=$101,385,011.40 | total_time=210.78s
+
+  saved batch 11 -> batch_0011.pkl | solve=211.68s rss_peak=854.1 MB (python_tracemalloc=318.7 MB) | violations=0
+>>> slurm mem appended to results/low_std_comparison/low_par_std_sa/slurm_mem_low.tsv: jobid=59487361 task=11 MaxRSS= MaxVMSize= ReqMem= Elapsed=

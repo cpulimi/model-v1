@@ -1,0 +1,26 @@
+>>> host=scc025 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python
+============================================================================
+QUBO FINAL RESULTS (PARALLEL MERGE)
+============================================================================
+  total cost:                 $78,374,003.65
+  inventory cost:             $8,757,966.96
+  fixed open-hub cost:        $56,000,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $563,650.00
+  assignment transport cost:  $13,052,386.69
+  open hubs:                  112
+  closed hubs:                88
+  stocked hub-part pairs:     43,102
+  hub-zip-part pairings:      115,710
+  structural violations:      0
+  SLA distance violations:    29,203
+  wall time:                  1,200.08s
+  peak/current memory:        1,834.0/38.8 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/low_std_comparison/low_par_std_sa/qubo
+============================================================================
+
+  parallel critical path: 1,200.1s (sequential-equivalent would be 11,226.6s)
+  pipeline breakdown: build=13.1s sample=11,212.9s eval=0.0s postprocess=48.2s (hub_prune=46.4s) cost=0.2s => total_pipeline=11,274.4s
+  memory: merge_rss_peak=408.9 MB max_single_batch_rss=4,235.7 MB sum_of_batch_peaks_rss=41,884.6 MB (conservative upper bound)
+  outputs: /home/cpulimi/ModelV1/model-v1/results/low_std_comparison/low_par_std_sa/qubo
+>>> slurm mem appended to results/low_std_comparison/low_par_std_sa/slurm_mem_low.tsv: jobid=59487362 task=merge MaxRSS= MaxVMSize= ReqMem= Elapsed=

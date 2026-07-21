@@ -1,0 +1,32 @@
+>>> host=scc029 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=1
+
+============================================================================
+PARALLEL SOLVE - batch 1/11
+============================================================================
+  dataset:      instances_low
+  demand rows:  11,340
+  est Z vars:   49,879
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/low_std_comparison/low_par_std_sqa/parallel_work
+============================================================================
+
+=== QUBO Batch 1 | 71 parts | 11,340 demand rows | estimated Z=49,879 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 1.32s | Z=49,879 Y=11,556 X=200 interactions=272,272
+    penalties: C1=2,509,764.65 C2=2,509,764.65 C3=2,509,764.65
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | scale=501,952.9 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 1 | violations C1=1906 C2=986 C3=0 C4=0 | cost=103119609.06
+    adaptive iter 2/5 | scale=501,952.9 | multipliers c1=1.50 c2=1.50 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 2 | violations C1=1919 C2=1046 C3=0 C4=0 | cost=103100449.74
+    adaptive iter 3/5 | scale=501,952.9 | multipliers c1=2.25 c2=2.25 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 3 | violations C1=1900 C2=1029 C3=0 C4=0 | cost=103103524.90
+    adaptive iter 4/5 | scale=501,952.9 | multipliers c1=3.38 c2=3.38 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 4 | violations C1=1960 C2=1016 C3=0 C4=0 | cost=103130213.98
+    adaptive iter 5/5 | scale=501,952.9 | multipliers c1=5.06 c2=5.06 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 5 | violations C1=1885 C2=981 C3=0 C4=0 | cost=103090482.10
+  [2b/3] Adaptive exhausted (5 iters) - running retry-reads fallback with final multipliers
+  [2/3] Sampling QUBO with OpenJij...
+    stage 1/3: sampling 316 reads...
+    stage 1/3: evaluating samples...
+    stage 1 done | samples=316 sample_time=13239.98s eval_time=163.13s best_structural_violations=2941 (C1=1931, C2=1010, C3=0) energy=-159969438512.07
+    stage 2/3: sampling 632 reads...
