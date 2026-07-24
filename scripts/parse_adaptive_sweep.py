@@ -72,9 +72,9 @@ for r in per_run:
     print(f"{r['run']:>6} {r['parts_req']:>6} {r['nbatch']:>8} {r['max_conv_iter']:>14} {r['n_exhausted']:>18} "
           f"{str(r['sviol']):>12} {str(r['openh']):>10} {cost:>16}")
 
-print("\n================ PER-BATCH ADAPTIVE TRAJECTORY ================")
-print(f"{'run':>6} {'b':>3} {'parts':>5} {'Zvars':>7} {'iters(C1/C2 per iter)':<44} {'outcome':>10} {'@iter':>5}")
+print("\n================ PER-BATCH ADAPTIVE TRAJECTORY (iter:C1/C2/C3) ================")
+print(f"{'run':>6} {'b':>3} {'parts':>5} {'Zvars':>7} {'iters(C1/C2/C3 per iter)':<58} {'outcome':>10} {'@iter':>5}")
 for run, b in per_batch_rows:
-    traj = "  ".join(f"{it}:{c1}/{c2}" for (it, c1, c2) in b["iters"])
-    print(f"{run:>6} {b['batch']:>3} {b['parts']:>5} {b['z']:>7} {traj:<44} {b['outcome']:>10} {str(b['conv_iter']):>5}")
+    traj = "  ".join(f"{it}:{c1}/{c2}/{c3}" for (it, c1, c2, c3) in b["iters"])
+    print(f"{run:>6} {b['batch']:>3} {b['parts']:>5} {b['z']:>7} {traj:<58} {b['outcome']:>10} {str(b['conv_iter']):>5}")
 print()
