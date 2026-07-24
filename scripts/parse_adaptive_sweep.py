@@ -40,7 +40,7 @@ for lg in runs:
         if cur is None: continue
         mi = iter_line.search(line)
         if mi:
-            cur["iters"].append((int(mi.group(1)), num(mi.group(2)), num(mi.group(3))))
+            cur["iters"].append((int(mi.group(1)), num(mi.group(2)), num(mi.group(3)), num(mi.group(4))))
         mf = feasible.search(line)
         if mf:
             cur["outcome"] = "feasible"; cur["conv_iter"] = int(mf.group(1))
