@@ -3,11 +3,14 @@
 Reads outputs/adaptive_scale_test/sweep_console/p*.log and the combined_summary.json
 per run, prints two tables: (1) per-run final result, (2) per-batch adaptive trajectory.
 """
-import re, json, glob, os
+import re, json, glob, os, sys
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
-CON = os.path.join(ROOT, "outputs/adaptive_scale_test/sweep_console")
-OUT = os.path.join(ROOT, "outputs/adaptive_scale_test")
+# Args: [output_root]  (console logs live in <output_root>/sweep_console)
+OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "outputs/adaptive_scale_test")
+if not os.path.isabs(OUT):
+    OUT = os.path.join(ROOT, OUT)
+CON = os.path.join(OUT, "sweep_console")
 
 batch_hdr = re.compile(r"=== QUBO Batch (\d+) \| (\d+) parts \| ([\d,]+) demand rows \| estimated Z=([\d,]+)")
 iter_line = re.compile(r"adaptive iter (\d+) \| violations C1=(\d+) C2=(\d+) C3=(\d+) C4=(\d+)")
