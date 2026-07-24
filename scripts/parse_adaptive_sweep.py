@@ -51,12 +51,9 @@ for lg in runs:
     cost = openh = sviol = wall = None
     if os.path.exists(js):
         d = json.load(open(js))
-        row = d.get("qubo") or (d.get("solvers", {}) or {}).get("qubo") or {}
-        # combined_summary.json structure: list or dict; try common shapes
-        if isinstance(d, dict) and "qubo" in d and isinstance(d["qubo"], dict):
-            q = d["qubo"]
-            cost = q.get("total_cost"); openh = q.get("open_hubs")
-            sviol = q.get("structural_violations"); wall = q.get("wall_seconds") or q.get("wall")
+        q = next((r for r in d.get("rows", []) if r.get("solver") == "qubo"), {})
+        cost = q.get("total_cost"); openh = q.get("open_hubs")
+        sviol = q.get("structural_violations"); wall = q.get("wall_seconds")
     n_exhaust = sum(1 for b in batches if b["outcome"] == "EXHAUSTED")
     max_iter = max((b["conv_iter"] or 0) for b in batches) if batches else 0
     per_run.append(dict(run=run, parts_req=parts_req, nbatch=len(batches),
