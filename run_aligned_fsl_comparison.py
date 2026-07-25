@@ -2408,6 +2408,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--penalty-mode", choices=["fixed", "adaptive"], default="adaptive")
     p.add_argument("--min-penalty", type=float, default=50000.0, help="Penalty floor. Bumped from 10000 (Tier 2.5) to dominate hub fixed costs.")
     p.add_argument("--constraint-multiplier", type=float, default=5.0)
+    p.add_argument("--disable-objective-scale", action="store_true",
+                   help="Force objective_scale=1.0 so penalties equal the base (min-penalty) "
+                        "floor instead of being lifted to ~scale*multiplier (millions). "
+                        "Diagnostic: isolates the objective-scale normalization.")
     for c in ("c1", "c2", "c3", "c4"):
         p.add_argument(f"--min-penalty-{c}", type=float, default=-1.0)
         p.add_argument(f"--constraint-multiplier-{c}", type=float, default=-1.0)
