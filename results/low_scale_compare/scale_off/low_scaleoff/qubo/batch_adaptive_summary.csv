@@ -1,0 +1,12 @@
+batch_id,adaptive_iterations_used,adaptive_was_feasible,adaptive_exit_reason,final_mult_c1,final_mult_c2,final_mult_c3,final_mult_c4
+1,5,False,max_iterations,3.375,2.25,2.25,1.0
+2,5,False,max_iterations,3.375,3.375,2.25,1.0
+3,5,False,max_iterations,3.375,3.375,2.25,1.0
+4,5,False,max_iterations,3.375,3.375,2.25,1.0
+5,5,True,feasible,3.375,3.375,2.25,1.0
+6,5,False,max_iterations,3.375,3.375,2.25,1.0
+7,5,False,max_iterations,3.375,3.375,2.25,1.0
+8,5,False,max_iterations,3.375,3.375,3.375,1.0
+9,4,True,feasible,2.25,2.25,1.5,1.0
+10,5,False,max_iterations,3.375,3.375,2.25,1.0
+11,5,False,max_iterations,7.59375,7.59375,5.0625,1.0

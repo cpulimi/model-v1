@@ -1,0 +1,36 @@
+>>> host=scc048 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=4
+
+============================================================================
+PARALLEL SOLVE - batch 4/11
+============================================================================
+  dataset:      instances_low
+  demand rows:  11,261
+  est Z vars:   49,596
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/low_scale_compare/scale_off/low_scaleoff/parallel_work
+============================================================================
+
+=== QUBO Batch 4 | 60 parts | 11,261 demand rows | estimated Z=49,596 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 1.30s | Z=49,596 Y=9,951 X=200 interactions=266,087
+    penalties: C1=50,000.00 C2=50,000.00 C3=50,000.00
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | scale=1.0 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 1 | violations C1=193 C2=29 C3=0 C4=0 | cost=103344518.62
+    adaptive iter 2/5 | scale=1.0 | multipliers c1=1.50 c2=1.50 c3=1.00 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 2 | violations C1=0 C2=0 C3=23 C4=0 | cost=96206623.27
+    adaptive iter 3/5 | scale=1.0 | multipliers c1=1.50 c2=1.50 c3=1.50 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 3 | violations C1=86 C2=8 C3=0 C4=0 | cost=103367728.53
+    adaptive iter 4/5 | scale=1.0 | multipliers c1=2.25 c2=2.25 c3=1.50 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 4 | violations C1=0 C2=0 C3=3 C4=0 | cost=101822232.38
+    adaptive iter 5/5 | scale=1.0 | multipliers c1=2.25 c2=2.25 c3=2.25 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 5 | violations C1=49 C2=8 C3=0 C4=0 | cost=103352443.11
+  [2b/3] Adaptive exhausted (5 iters) - running retry-reads fallback with final multipliers
+  [2/3] Sampling QUBO with OpenJij...
+    stage 1/2: sampling 32 reads...
+    stage 1/2: evaluating samples...
+    stage 1 done | samples=32 sample_time=16.34s eval_time=13.07s best_structural_violations=0 (C1=0, C2=0, C3=0) energy=-1796975951.56
+    early stop: feasible batch sample found
+  [3/3] Batch selected | OK | aligned cost=$103,317,798.44 | total_time=184.39s
+
+  saved batch 4 -> batch_0004.pkl | solve=185.81s rss_peak=866.1 MB (python_tracemalloc=310.2 MB) | violations=0
+>>> slurm mem appended to results/low_scale_compare/scale_off/low_scaleoff/slurm_mem_low.tsv: jobid=59667490 task=4 MaxRSS= MaxVMSize= ReqMem= Elapsed=

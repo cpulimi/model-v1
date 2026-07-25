@@ -1,0 +1,32 @@
+>>> host=scc049 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=5
+
+============================================================================
+PARALLEL SOLVE - batch 5/11
+============================================================================
+  dataset:      instances_low
+  demand rows:  11,308
+  est Z vars:   49,516
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/low_scale_compare/scale_off/low_scaleoff/parallel_work
+============================================================================
+
+=== QUBO Batch 5 | 58 parts | 11,308 demand rows | estimated Z=49,516 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 1.30s | Z=49,516 Y=9,685 X=200 interactions=265,655
+    penalties: C1=50,000.00 C2=50,000.00 C3=50,000.00
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | scale=1.0 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 1 | violations C1=210 C2=36 C3=5 C4=0 | cost=102616130.42
+    adaptive iter 2/5 | scale=1.0 | multipliers c1=1.50 c2=1.50 c3=1.50 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 2 | violations C1=116 C2=12 C3=0 C4=0 | cost=103109416.21
+    adaptive iter 3/5 | scale=1.0 | multipliers c1=2.25 c2=2.25 c3=1.50 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 3 | violations C1=0 C2=0 C3=3 C4=0 | cost=100538936.06
+    adaptive iter 4/5 | scale=1.0 | multipliers c1=2.25 c2=2.25 c3=2.25 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 4 | violations C1=65 C2=10 C3=0 C4=0 | cost=103104835.30
+    adaptive iter 5/5 | scale=1.0 | multipliers c1=3.38 c2=3.38 c3=2.25 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 5 | violations C1=0 C2=0 C3=0 C4=0 | cost=103077128.35
+    adaptive feasible at iter 5
+  [2b/3] Adaptive succeeded - skipping retry-reads fallback
+  [3/3] Batch selected | OK | aligned cost=$103,077,128.35 | total_time=152.87s
+
+  saved batch 5 -> batch_0005.pkl | solve=154.29s rss_peak=867.3 MB (python_tracemalloc=309.4 MB) | violations=0
+>>> slurm mem appended to results/low_scale_compare/scale_off/low_scaleoff/slurm_mem_low.tsv: jobid=59667490 task=5 MaxRSS= MaxVMSize= ReqMem= Elapsed=

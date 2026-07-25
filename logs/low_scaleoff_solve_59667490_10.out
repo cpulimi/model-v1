@@ -1,0 +1,38 @@
+>>> host=scc023 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=10
+
+============================================================================
+PARALLEL SOLVE - batch 10/11
+============================================================================
+  dataset:      instances_low
+  demand rows:  11,271
+  est Z vars:   48,929
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/low_scale_compare/scale_off/low_scaleoff/parallel_work
+============================================================================
+
+=== QUBO Batch 10 | 58 parts | 11,271 demand rows | estimated Z=48,929 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 1.28s | Z=48,929 Y=9,859 X=200 interactions=260,893
+    penalties: C1=50,000.00 C2=50,000.00 C3=50,000.00
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | scale=1.0 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 1 | violations C1=185 C2=31 C3=0 C4=0 | cost=103088359.83
+    adaptive iter 2/5 | scale=1.0 | multipliers c1=1.50 c2=1.50 c3=1.00 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 2 | violations C1=0 C2=0 C3=25 C4=0 | cost=94955452.19
+    adaptive iter 3/5 | scale=1.0 | multipliers c1=1.50 c2=1.50 c3=1.50 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 3 | violations C1=93 C2=24 C3=0 C4=0 | cost=103094501.77
+    adaptive iter 4/5 | scale=1.0 | multipliers c1=2.25 c2=2.25 c3=1.50 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 4 | violations C1=0 C2=0 C3=2 C4=0 | cost=100515664.77
+    adaptive iter 5/5 | scale=1.0 | multipliers c1=2.25 c2=2.25 c3=2.25 c4=1.00 | binding[c1=floor,c2=floor,c3=floor,c4=floor]
+    adaptive iter 5 | violations C1=62 C2=6 C3=0 C4=0 | cost=103086111.77
+  [2b/3] Adaptive exhausted (5 iters) - running retry-reads fallback with final multipliers
+  [2/3] Sampling QUBO with OpenJij...
+    stage 1/2: sampling 32 reads...
+    stage 1/2: evaluating samples...
+    stage 1 done | samples=32 sample_time=15.85s eval_time=13.03s best_structural_violations=1 (C1=0, C2=0, C3=1) energy=-1799838846.67
+    stage 2/2: sampling 64 reads...
+    stage 2/2: evaluating samples...
+    stage 2 done | samples=64 sample_time=27.02s eval_time=26.15s best_structural_violations=2 (C1=0, C2=0, C3=2) energy=-1799710996.71
+  [3/3] Batch selected | 1 structural violations | aligned cost=$102,029,903.33 | total_time=235.69s
+
+  saved batch 10 -> batch_0010.pkl | solve=237.10s rss_peak=1,112.9 MB (python_tracemalloc=424.8 MB) | violations=1
+>>> slurm mem appended to results/low_scale_compare/scale_off/low_scaleoff/slurm_mem_low.tsv: jobid=59667490 task=10 MaxRSS= MaxVMSize= ReqMem= Elapsed=

@@ -1,0 +1,26 @@
+>>> host=scc011 project=/home/cpulimi/ModelV1/model-v1 python=/packages/apps/mamba/2.6.2/bin/python batch=7
+
+============================================================================
+PARALLEL SOLVE - batch 7/11
+============================================================================
+  dataset:      instances_low
+  demand rows:  11,232
+  est Z vars:   49,149
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/low_scale_compare/scale_on/low_scaleon/parallel_work
+============================================================================
+
+=== QUBO Batch 7 | 53 parts | 11,232 demand rows | estimated Z=49,149 ===
+  [1/3] Building aligned manual QUBO dictionary...
+    built in 1.28s | Z=49,149 Y=8,910 X=200 interactions=262,747
+    penalties: C1=2,514,284.40 C2=2,514,284.40 C3=2,514,284.40
+  [2a/3] Adaptive penalty phase...
+    adaptive iter 1/5 | scale=502,856.9 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 1 | violations C1=39 C2=6 C3=0 C4=0 | cost=103014355.27
+    adaptive iter 2/5 | scale=502,856.9 | multipliers c1=1.50 c2=1.50 c3=1.00 c4=1.00 | binding[c1=scaled,c2=scaled,c3=scaled,c4=scaled]
+    adaptive iter 2 | violations C1=0 C2=0 C3=0 C4=0 | cost=102804475.60
+    adaptive feasible at iter 2
+  [2b/3] Adaptive succeeded - skipping retry-reads fallback
+  [3/3] Batch selected | OK | aligned cost=$102,804,475.60 | total_time=59.66s
+
+  saved batch 7 -> batch_0007.pkl | solve=61.14s rss_peak=823.7 MB (python_tracemalloc=300.0 MB) | violations=0
+>>> slurm mem appended to results/low_scale_compare/scale_on/low_scaleon/slurm_mem_low.tsv: jobid=59667478 task=7 MaxRSS= MaxVMSize= ReqMem= Elapsed=
