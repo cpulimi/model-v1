@@ -967,7 +967,7 @@ def penalty_weights(
     multipliers: dict[str, float] | None = None,
     return_diagnostics: bool = False,
 ) -> dict[str, float] | tuple[dict[str, float], dict[str, dict[str, Any]]]:
-    scale = estimate_objective_scale(batch_df, data)
+    scale = 1.0 if getattr(args, "disable_objective_scale", False) else estimate_objective_scale(batch_df, data)
     out: dict[str, float] = {}
     diagnostics: dict[str, dict[str, Any]] = {}
     for c in ("c1", "c2", "c3", "c4"):
