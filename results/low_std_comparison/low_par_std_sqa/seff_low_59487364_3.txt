@@ -1,0 +1,13 @@
+Job ID: 59487675
+Array Job ID: 59487364_3
+Cluster: sol
+User/Group: cpulimi/grp_fowler
+State: RUNNING
+Nodes: 1
+Cores per node: 128
+CPU Utilized: 00:00:00
+CPU Efficiency: 0.00% of 206-17:31:44 core-walltime
+Job Wall-clock time: 1-14:45:43
+Memory Utilized: 0.00 MB
+Memory Efficiency: 0.00% of 500.02 GB (500.02 GB/node)
+WARNING: Efficiency statistics can only be obtained after the job has ended as seff tool is based on the accounting database data.
