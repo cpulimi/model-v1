@@ -1230,6 +1230,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Do not repair missing/multiple assignments in the final output.")
     p.add_argument("--no-trim-unused", action="store_true",
                    help="Do not trim unused open hubs / stocked pairs after final assignments.")
+    p.add_argument("--adaptive-penalty-mode", choices=["off", "within-batch"], default="within-batch",
+                   help="Adaptive penalty strategy. 'within-batch' iteratively grows the penalties of "
+                        "violated constraints and resamples. ON by default here because with objective "
+                        "scale OFF, C3 starts at 50,000 against an S_lim of 500,000 and only the "
+                        "escalation fixes that. 'off' gives a single static pass.")
+    p.add_argument("--adaptive-penalty-iterations", type=int, default=8,
+                   help="Max adaptive iterations per batch. Default 8, not ref's 5: escalating C3 past "
+                        "S_lim needs ceil(log(500000/50000)/log(1.5)) = 6 iterations at growth 1.5.")
+    p.add_argument("--adaptive-penalty-growth", type=float, default=1.5,
+                   help="Multiplicative growth for violated constraint penalties.")
+    p.add_argument("--adaptive-penalty-stagnation-patience", type=int, default=0,
+                   help="Break if total_violations has not strictly improved for N iterations. 0 disables.")
     p.add_argument("--no-hub-prune", action="store_true", help="Disable the global hub-pruning post-pass.")
     p.add_argument("--hub-prune-max-iterations", type=int, default=500,
                    help="Max passes over open hubs in the hub-prune post-pass.")
