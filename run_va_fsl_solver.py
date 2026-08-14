@@ -1168,7 +1168,15 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
             ),
             "seeded": False,
             "seed_note": "The VA PoC API exposes no seed parameter; runs are not reproducible read-for-read.",
-            "adaptive_penalty": "not implemented on the VA path (static penalties, equivalent to ref --adaptive-penalty-mode off)",
+            "adaptive_penalty_mode": str(args.adaptive_penalty_mode),
+            "adaptive_penalty_iterations_max": int(args.adaptive_penalty_iterations),
+            "adaptive_penalty_growth": float(args.adaptive_penalty_growth),
+            "batches_reaching_feasibility": int(
+                sum(1 for s in all_va_stats if s["adaptive_was_feasible"])
+            ),
+            "adaptive_exit_reasons": {
+                str(s["batch_id"]): str(s["adaptive_exit_reason"]) for s in all_va_stats
+            },
             "num_reads_base": int(args.num_reads),
             "num_sweeps": int(args.num_sweeps),
             "vector_mode": str(args.va_vector_mode),
