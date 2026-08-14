@@ -540,13 +540,15 @@ def solve_va_batch(
         f"  [2/3] Sampling with VectorAnnealing | reads={base_reads} "
         f"sweeps={args.num_sweeps} vector_mode={args.va_vector_mode} "
         f"beta_range={beta_range if beta_range is not None else 'VA default [10,100,200]'} | "
-        f"repeats={args.va_repeats}",
+        f"repeats={args.va_repeats} | adaptive={'within-batch' if adaptive else 'off'}"
+        + (f" (max {max_iterations} iters, growth {growth})" if adaptive else ""),
         flush=True,
     )
 
     best_eval: dict[str, Any] | None = None
     precision_rows: list[dict[str, Any]] = []
     repeat_records: list[dict[str, Any]] = []
+    iteration_log: list[dict[str, Any]] = []
     sample_seconds = 0.0
     eval_seconds = 0.0
     read_index = 0
@@ -554,142 +556,214 @@ def solve_va_batch(
     total_retries = 0
     constraint_ok_count = 0
     constraint_total_count = 0
+    iterations_used = 0
+    was_feasible = False
+    exit_reason = "max_iterations" if adaptive else "static_single_pass"
+    best_total_violations: int | None = None
+    no_improve_count = 0
 
-    for repeat in range(1, int(args.va_repeats) + 1):
-        results: list[Any] = []
-        attempts_used = 0
+    for iteration in range(1, max_iterations + 1):
+        iterations_used = iteration
 
-        # Retry only when EVERY read in the call came back with a broken
-        # constraint. The manual documents this INVALID case and advises re-running.
-        for attempt in range(1, int(args.va_max_retries) + 2):
-            attempts_used = attempt
-            total_sample_calls += 1
-            results, elapsed = va_sample_once(
-                VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range
-            )
-            sample_seconds += elapsed
+        # Rebuild the QUBO at this iteration's multipliers. Variable counts are
+        # invariant under multipliers (only coefficients change), so the preflight
+        # ceiling check stays valid across iterations.
+        if iteration > 1:
+            t_rebuild = time.time()
+            qubo_meta = ref.build_qubo_for_batch(batch_df, data, args, multipliers=multipliers)
+            build_seconds += time.time() - t_rebuild
+            Q = qubo_meta["Q"]
 
-            if not results:
-                print(
-                    f"    repeat {repeat} attempt {attempt}: VA returned no results "
-                    f"({elapsed:.2f}s) - retrying",
-                    flush=True,
-                )
-                total_retries += 1
-                continue
-
-            flags = [getattr(r, "constraint", None) for r in results]
-            explicit_false = [f for f in flags if f is False]
-            all_broken = len(explicit_false) == len(flags) and len(flags) > 0
-
-            if not all_broken:
-                print(
-                    f"    repeat {repeat} attempt {attempt}: {len(results)} reads in {elapsed:.2f}s "
-                    f"| constraint satisfied {sum(1 for f in flags if f is True)}/{len(flags)}"
-                    + (" (VA reported no constraint flag)" if all(f is None for f in flags) else ""),
-                    flush=True,
-                )
-                break
-
-            total_retries += 1
+        _, diag = ref.penalty_weights(
+            batch_df, data, args, multipliers=multipliers, return_diagnostics=True
+        )
+        if adaptive:
             print(
-                f"    repeat {repeat} attempt {attempt}: VA returned INVALID "
-                f"(constraint broken on all {len(flags)} reads, {elapsed:.2f}s) - "
-                f"retry {attempt}/{int(args.va_max_retries)}",
+                f"    adaptive iter {iteration}/{max_iterations} | "
+                f"multipliers c1={multipliers['c1']:.2f} c2={multipliers['c2']:.2f} "
+                f"c3={multipliers['c3']:.2f} c4={multipliers['c4']:.2f} | "
+                f"penalties C1={diag['c1']['final_value']:,.0f} C2={diag['c2']['final_value']:,.0f} "
+                f"C3={diag['c3']['final_value']:,.0f}",
                 flush=True,
             )
-            results = []
 
-        if not results:
-            raise RuntimeError(
-                f"VA batch {batch.batch_id} repeat {repeat}: every read had a broken "
-                f"constraint after {attempts_used} attempts "
-                f"(--va-max-retries {int(args.va_max_retries)}). Failing this batch."
+        iter_evals: list[dict[str, Any]] = []
+        for repeat in range(1, int(args.va_repeats) + 1):
+            label = f"iter {iteration} repeat {repeat}" if adaptive else f"repeat {repeat}"
+            results, seconds, attempts_used, retries = va_sample_with_retries(
+                VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range, label
             )
+            sample_seconds += seconds
+            total_sample_calls += attempts_used
+            total_retries += retries
 
-        t_eval = time.time()
-        repeat_evals: list[dict[str, Any]] = []
-        for r in results:
-            spin = dict(getattr(r, "spin", {}) or {})
-            va_energy = float(getattr(r, "energy", 0.0))
-            constraint_flag = getattr(r, "constraint", None)
+            if not results:
+                raise RuntimeError(
+                    f"VA batch {batch.batch_id} ({label}): every read had a broken constraint "
+                    f"after {attempts_used} attempts (--va-max-retries "
+                    f"{int(args.va_max_retries)}). Failing this batch."
+                )
 
-            recomputed = recompute_energy_float64(Q, spin, offset=0.0)
-            abs_diff = abs(va_energy - recomputed)
-            rel_diff = relative_difference(va_energy, recomputed)
+            t_eval = time.time()
+            repeat_evals: list[dict[str, Any]] = []
+            for r in results:
+                spin = dict(getattr(r, "spin", {}) or {})
+                va_energy = float(getattr(r, "energy", 0.0))
+                constraint_flag = getattr(r, "constraint", None)
 
-            precision_rows.append(
+                recomputed = recompute_energy_float64(Q, spin, offset=0.0)
+                precision_rows.append(
+                    {
+                        "batch_id": int(batch.batch_id),
+                        "read_index": int(read_index),
+                        "num_vars": int(total_vars),
+                        "va_reported_energy": float(va_energy),
+                        "recomputed_energy": float(recomputed),
+                        "abs_diff": float(abs(va_energy - recomputed)),
+                        "rel_diff": float(relative_difference(va_energy, recomputed)),
+                        "constraint_ok": constraint_flag if constraint_flag is None else bool(constraint_flag),
+                    }
+                )
+                read_index += 1
+
+                constraint_total_count += 1
+                if constraint_flag is True:
+                    constraint_ok_count += 1
+
+                # Identical accounting to ref.solve_qubo_batch: VA's own reported
+                # energy is fed to evaluate_sample, exactly as OpenJij's is.
+                ev = ref.evaluate_sample(spin, va_energy, qubo_meta, data)
+                repeat_evals.append(ev)
+                iter_evals.append(ev)
+
+                key = (ev["total_violations"], ev["c1"], ev["c2"], ev["c3"], ev["cost"], ev["energy"])
+                if best_eval is None:
+                    best_eval = ev
+                else:
+                    old_key = (
+                        best_eval["total_violations"],
+                        best_eval["c1"],
+                        best_eval["c2"],
+                        best_eval["c3"],
+                        best_eval["cost"],
+                        best_eval["energy"],
+                    )
+                    if key < old_key:
+                        best_eval = ev
+            eval_seconds += time.time() - t_eval
+
+            energies = [float(e["energy"]) for e in repeat_evals]
+            costs = [float(e["cost"]) for e in repeat_evals]
+            feasible_reads = sum(1 for e in repeat_evals if int(e["total_violations"]) == 0)
+            repeat_best = min(
+                repeat_evals,
+                key=lambda e: (e["total_violations"], e["c1"], e["c2"], e["c3"], e["cost"], e["energy"]),
+            )
+            repeat_records.append(
                 {
-                    "batch_id": int(batch.batch_id),
-                    "read_index": int(read_index),
-                    "num_vars": int(total_vars),
-                    "va_reported_energy": float(va_energy),
-                    "recomputed_energy": float(recomputed),
-                    "abs_diff": float(abs_diff),
-                    "rel_diff": float(rel_diff),
-                    "constraint_ok": constraint_flag if constraint_flag is None else bool(constraint_flag),
+                    "iteration": int(iteration),
+                    "repeat": int(repeat),
+                    "attempts_used": int(attempts_used),
+                    "reads": int(len(repeat_evals)),
+                    "energy_min": min(energies),
+                    "energy_median": statistics.median(energies),
+                    "energy_max": max(energies),
+                    "cost_min": min(costs),
+                    "cost_median": statistics.median(costs),
+                    "cost_max": max(costs),
+                    "constraint_satisfied_reads": int(
+                        sum(1 for r in results if getattr(r, "constraint", None) is True)
+                    ),
+                    "structurally_feasible_reads": int(feasible_reads),
+                    "best_total_violations": int(repeat_best["total_violations"]),
+                    "best_cost": float(repeat_best["cost"]),
                 }
             )
-            read_index += 1
+            print(
+                f"    {label} | energy min/med/max = {min(energies):,.2f} / "
+                f"{statistics.median(energies):,.2f} / {max(energies):,.2f} | cost min/med/max = "
+                f"{min(costs):,.2f} / {statistics.median(costs):,.2f} / {max(costs):,.2f} | "
+                f"structurally feasible reads {feasible_reads}/{len(repeat_evals)}",
+                flush=True,
+            )
 
-            constraint_total_count += 1
-            if constraint_flag is True:
-                constraint_ok_count += 1
-
-            # Identical accounting to ref.solve_qubo_batch: VA's own reported
-            # energy is fed to evaluate_sample, exactly as OpenJij's is.
-            ev = ref.evaluate_sample(spin, va_energy, qubo_meta, data)
-            repeat_evals.append(ev)
-
-            key = (ev["total_violations"], ev["c1"], ev["c2"], ev["c3"], ev["cost"], ev["energy"])
-            if best_eval is None:
-                best_eval = ev
-            else:
-                old_key = (
-                    best_eval["total_violations"],
-                    best_eval["c1"],
-                    best_eval["c2"],
-                    best_eval["c3"],
-                    best_eval["cost"],
-                    best_eval["energy"],
-                )
-                if key < old_key:
-                    best_eval = ev
-        eval_seconds += time.time() - t_eval
-
-        energies = [float(e["energy"]) for e in repeat_evals]
-        costs = [float(e["cost"]) for e in repeat_evals]
-        feasible_reads = sum(1 for e in repeat_evals if int(e["total_violations"]) == 0)
-        repeat_best = min(
-            repeat_evals,
+        iter_best = min(
+            iter_evals,
             key=lambda e: (e["total_violations"], e["c1"], e["c2"], e["c3"], e["cost"], e["energy"]),
         )
-        repeat_records.append(
-            {
-                "repeat": int(repeat),
-                "attempts_used": int(attempts_used),
-                "reads": int(len(repeat_evals)),
-                "energy_min": min(energies),
-                "energy_median": statistics.median(energies),
-                "energy_max": max(energies),
-                "cost_min": min(costs),
-                "cost_median": statistics.median(costs),
-                "cost_max": max(costs),
-                "constraint_satisfied_reads": int(
-                    sum(1 for r in results if getattr(r, "constraint", None) is True)
-                ),
-                "structurally_feasible_reads": int(feasible_reads),
-                "best_total_violations": int(repeat_best["total_violations"]),
-                "best_cost": float(repeat_best["cost"]),
-            }
-        )
+
+        # ref.adaptive_iteration_log_dataframe's schema. seed_used is None: VA has
+        # no seed parameter, but the column is kept so the CSV matches the
+        # OpenJij path's and both can be concatenated.
+        log_row: dict[str, Any] = {
+            "batch_id": int(batch.batch_id),
+            "iteration": int(iteration),
+            "objective_scale": float(diag["c1"]["objective_scale"]),
+            "total_violations": int(iter_best["total_violations"]),
+            "cost": float(iter_best["cost"]),
+            "energy": float(iter_best["energy"]),
+            "num_vars": int(total_vars),
+            "num_interactions": int(len(Q)),
+            "seed_used": None,
+            "num_reads": int(base_reads),
+            "exit_reason": "",
+        }
+        for c in ("c1", "c2", "c3", "c4"):
+            log_row[f"min_pen_{c}"] = float(diag[c]["min_pen"])
+            log_row[f"scaled_{c}"] = float(diag[c]["scaled_value"])
+            log_row[f"chosen_{c}"] = float(diag[c]["chosen_value"])
+            log_row[f"binding_branch_{c}"] = str(diag[c]["binding_branch"])
+            log_row[f"mult_{c}"] = float(multipliers[c])
+            log_row[f"viol_{c}"] = int(iter_best.get(c, 0))
+        iteration_log.append(log_row)
+
+        if int(iter_best["total_violations"]) == 0:
+            was_feasible = True
+            exit_reason = "feasible"
+            iteration_log[-1]["exit_reason"] = exit_reason
+            if adaptive:
+                print(f"    adaptive feasible at iter {iteration}", flush=True)
+            break
+
+        if not adaptive:
+            break
+
+        # Stagnation exit, after the feasibility break so feasibility always wins.
+        if best_total_violations is None or int(iter_best["total_violations"]) < best_total_violations:
+            best_total_violations = int(iter_best["total_violations"])
+            no_improve_count = 0
+        else:
+            no_improve_count += 1
+        if stagnation_patience > 0 and no_improve_count >= stagnation_patience:
+            exit_reason = "stagnated"
+            iteration_log[-1]["exit_reason"] = exit_reason
+            print(
+                f"    adaptive stagnated at iter {iteration} "
+                f"(no strict improvement for {no_improve_count} iters)",
+                flush=True,
+            )
+            break
+
+        # Grow multipliers for violated constraints only.
+        for c in ("c1", "c2", "c3", "c4"):
+            if int(iter_best.get(c, 0)) > 0:
+                multipliers[c] *= growth
         print(
-            f"    repeat {repeat}/{args.va_repeats} | energy min/med/max = "
-            f"{min(energies):,.2f} / {statistics.median(energies):,.2f} / {max(energies):,.2f} | "
-            f"cost min/med/max = {min(costs):,.2f} / {statistics.median(costs):,.2f} / {max(costs):,.2f} | "
-            f"structurally feasible reads {feasible_reads}/{len(repeat_evals)}",
+            f"    adaptive iter {iteration} violations C1={iter_best['c1']} C2={iter_best['c2']} "
+            f"C3={iter_best['c3']} C4={iter_best.get('c4', 0)} | cost={iter_best['cost']:,.2f} "
+            f"-> growing penalties",
             flush=True,
         )
+
+    if adaptive and exit_reason == "max_iterations" and iteration_log:
+        iteration_log[-1]["exit_reason"] = exit_reason
+        if not was_feasible:
+            print(
+                f"    adaptive exhausted {iterations_used} iterations without feasibility "
+                f"(exit_reason=max_iterations). Consider raising "
+                f"--adaptive-penalty-iterations or --adaptive-penalty-growth.",
+                flush=True,
+            )
 
     if best_eval is None:
         raise RuntimeError(f"VA batch {batch.batch_id}: no sample was selected")
