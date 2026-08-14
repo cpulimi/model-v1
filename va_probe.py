@@ -182,6 +182,42 @@ def probe_capabilities(VectorAnnealing: object) -> None:
     print("  NOTE: a 'seed' row reading YES would contradict every NEC doc found so far.")
     print("  If it is YES, tell me -- the no-seed design decision would need revisiting.")
 
+    # V3.0.0-specific: NEC's Vector Annealing Service 3.0 reportedly added
+    # Constraint Weight Auto-Tuning, Constraint Priority (inequalities), and
+    # higher-order term support. If the on-prem V3 package carries the same
+    # features, they overlap with the adaptive penalty loop in
+    # run_va_fsl_solver.py -- so look for them explicitly rather than by eye.
+    section("4b. V3 FEATURE SEARCH  (auto-tuning / priority / higher-order)")
+    keywords = (
+        "auto", "tune", "tuning", "weight", "priority", "high_order", "higher",
+        "order", "inequality", "penalty", "constraint",
+    )
+    hits: dict[str, list[str]] = {}
+    for name in dir(VectorAnnealing):
+        low = name.lower()
+        for kw in keywords:
+            if kw in low:
+                hits.setdefault(kw, []).append(name)
+    if hits:
+        for kw in sorted(hits):
+            print(f"  '{kw}' -> {', '.join(sorted(set(hits[kw])))}")
+        print()
+        print("  If anything above looks like weight auto-tuning, say so -- it may")
+        print("  duplicate the adaptive penalty loop we implemented by hand.")
+    else:
+        print("  No auto-tuning / priority / higher-order names found in the module.")
+        print("  -> our adaptive penalty loop is doing work the engine does not.")
+
+    for fn_name in ("model", "sampler"):
+        fn = getattr(VectorAnnealing, fn_name, None)
+        if fn is None:
+            continue
+        try:
+            params = list(inspect.signature(fn).parameters)
+            print(f"\n  {fn_name}() accepts: {', '.join(params)}")
+        except (TypeError, ValueError):
+            pass
+
 
 def smoke_test(VectorAnnealing: object) -> None:
     section("5. SMOKE TEST  (needs a VE card)")
