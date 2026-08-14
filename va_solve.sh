@@ -98,7 +98,10 @@ python run_va_fsl_solver.py \
   --constraint-multiplier 5.0 \
   --c4-mode auto \
   --hub-prune-max-iterations 500 \
-  --va-repeats 3 \
+  --adaptive-penalty-mode within-batch \
+  --adaptive-penalty-iterations 8 \
+  --adaptive-penalty-growth 1.5 \
+  --va-repeats 1 \
   --va-max-retries 3 \
   --va-vector-mode ACCURACY \
   --qubo-time-limit 21600
