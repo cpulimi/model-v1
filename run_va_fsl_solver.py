@@ -2,9 +2,16 @@
 """
 Standalone FSL QUBO solver running on the NEC Vector Annealing (VA) engine.
 
-This is a sibling of run_aligned_fsl_comparison.py's QUBO path. It solves the
-*byte-identical* QUBO that the OpenJij run solves, so the two are directly
-comparable; only the sampler changes.
+This is a sibling of run_aligned_fsl_comparison.py's QUBO path. The QUBO
+construction is byte-identical to the OpenJij path -- same encoding, same
+batching, same variables -- so the sampler is the only thing that changes.
+
+PENALTY SCALE: objective-scale normalization is OFF by default here, so C1-C4
+penalties sit flat at --min-penalty (50,000) instead of being lifted to
+~scale*multiplier (~2.51M on instances_low). That makes this run comparable to
+the NO-SCALE OpenJij arm (run_aligned_fsl_comparison_noscale.py, e.g.
+scripts/adaptive_scale_sweep_noscale.sh), and NOT to scale-ON baselines.
+Pass --enable-objective-scale to restore the scale-ON penalties.
 
     python run_va_fsl_solver.py --dataset-dir instances_low --dry-run
     python run_va_fsl_solver.py --dataset-dir instances_low --run-root results/va_low
