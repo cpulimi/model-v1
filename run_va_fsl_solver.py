@@ -948,6 +948,24 @@ def print_va_header(
         flush=True,
     )
     print(f"  min penalty (floor):      {float(args.min_penalty):,.2f}", flush=True)
+    print(f"  adaptive penalty:         {args.adaptive_penalty_mode}", flush=True)
+    if args.adaptive_penalty_mode == "within-batch":
+        print(f"    max iterations:         {args.adaptive_penalty_iterations}", flush=True)
+        print(f"    growth factor:          {args.adaptive_penalty_growth}", flush=True)
+        s_lim = float(data["scalar"]["S_lim"])
+        base = float(args.min_penalty)
+        if not args.enable_objective_scale and base < s_lim:
+            need = math.ceil(math.log(s_lim / base) / math.log(float(args.adaptive_penalty_growth)))
+            print(
+                f"    NOTE: C3 starts at {base:,.0f} vs S_lim {s_lim:,.0f}; stocking at a closed "
+                f"hub is initially cheaper than opening one.",
+                flush=True,
+            )
+            print(
+                f"          escalation needs ~{need} iterations to pass S_lim "
+                f"(budget is {args.adaptive_penalty_iterations}).",
+                flush=True,
+            )
     print(f"  constraint multiplier:    {float(args.constraint_multiplier):,.2f}"
           f"{'' if args.enable_objective_scale else '  (inactive: scale is OFF)'}", flush=True)
     print(f"  base miles:               {data['scalar']['base_miles']}", flush=True)
