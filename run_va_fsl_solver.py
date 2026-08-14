@@ -800,6 +800,14 @@ def solve_va_batch(
         "structurally_feasible_reads": int(sum(r["structurally_feasible_reads"] for r in repeat_records)),
         "max_abs_rel_diff": max(all_rel) if all_rel else float("nan"),
         "median_abs_rel_diff": statistics.median(all_rel) if all_rel else float("nan"),
+        "adaptive_iterations_used": int(iterations_used),
+        "adaptive_was_feasible": bool(was_feasible),
+        "adaptive_exit_reason": str(exit_reason),
+        "final_mult_c1": float(multipliers["c1"]),
+        "final_mult_c2": float(multipliers["c2"]),
+        "final_mult_c3": float(multipliers["c3"]),
+        "final_penalty_c1": float(qubo_meta["penalties"]["c1"]),
+        "final_penalty_c3": float(qubo_meta["penalties"]["c3"]),
         "repeat_records": repeat_records,
     }
 
