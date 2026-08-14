@@ -37,11 +37,16 @@ DELIBERATE SCOPE NOTES
 * No seeding. The VA PoC API exposes no seed parameter, so VA runs are not
   reproducible read-for-read. Use --va-repeats N to characterize the spread
   instead; per-repeat statistics land in va_batch_summary.csv.
-* No adaptive-penalty loop. ref.run_adaptive_penalty_loop is built around
-  seeded resampling (seed = args.seed + batch_id*1000 + iteration), which VA
-  cannot honor. This solver therefore runs the static penalty path, exactly
-  equivalent to ref's default --adaptive-penalty-mode off. Penalties come from
-  ref.penalty_weights with multipliers=None.
+* Adaptive penalty IS implemented, and is ON by default. It mirrors
+  ref.run_adaptive_penalty_loop -- rebuild the QUBO with grown multipliers for
+  violated constraints, resample, repeat until feasible -- with the seed line
+  dropped, since VA has no seed and the escalation never depended on one.
+  It is on by default because with objective scale OFF, C3's penalty starts at
+  50,000 against an S_lim of 500,000, so stocking at a closed hub is initially
+  10x cheaper than opening one; only the escalation corrects that.
+  --adaptive-penalty-iterations defaults to 8 rather than ref's 5, because
+  ceil(log(500000/50000)/log(1.5)) = 6 iterations are needed to clear S_lim.
+  Pass --adaptive-penalty-mode off for a single static pass.
 * No retry-reads escalation (--max-stages / --retry-reads-boost). Each batch
   gets one VA sampling call per repeat, plus constraint-failure retries.
 
