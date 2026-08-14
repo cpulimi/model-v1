@@ -959,6 +959,16 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
                 None,
             ),
             "python_version": sys.version.splitlines()[0],
+            "objective_scale_enabled": bool(args.enable_objective_scale),
+            "min_penalty": float(args.min_penalty),
+            "constraint_multiplier": float(args.constraint_multiplier),
+            "penalty_note": (
+                "objective scale ON: penalties = max(min_penalty, scale*multiplier)"
+                if args.enable_objective_scale
+                else "objective scale OFF (VA default): penalties flat at min_penalty; "
+                     "comparable to the run_aligned_fsl_comparison_noscale.py arm, NOT to "
+                     "scale-ON OpenJij baselines"
+            ),
             "seeded": False,
             "seed_note": "The VA PoC API exposes no seed parameter; runs are not reproducible read-for-read.",
             "adaptive_penalty": "not implemented on the VA path (static penalties, equivalent to ref --adaptive-penalty-mode off)",
