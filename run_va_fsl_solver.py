@@ -1072,6 +1072,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     args = p.parse_args(argv)
 
+    # ref.penalty_weights reads `disable_objective_scale` via getattr. The VA path
+    # defaults to objective scale OFF, so penalties equal --min-penalty flat rather
+    # than being lifted into the millions. See the module docstring for why.
+    args.disable_objective_scale = not bool(args.enable_objective_scale)
+
     if int(args.va_repeats) < 1:
         p.error("--va-repeats must be >= 1")
     if int(args.va_max_retries) < 0:
