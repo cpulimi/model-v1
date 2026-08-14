@@ -82,6 +82,12 @@ python run_va_fsl_solver.py \
 # scripts/adaptive_scale_sweep_noscale.sh) -- NOT against scale-ON baselines.
 # Pass --enable-objective-scale to switch back to the ~2.51M penalties.
 # --constraint-multiplier is inert while scale is OFF; kept for config parity.
+# ADAPTIVE PENALTY is ON (matches the OpenJij no-scale baseline). 8 iterations,
+# not ref's 5: with scale OFF, C3 starts at 50000 against S_lim 500000, and
+# escalating past it at growth 1.5 needs 6 iterations.
+# RUNTIME: the adaptive loop samples once per iteration, so a batch costs up to
+# 8 VA calls, and --va-repeats multiplies on top of that. Repeats is held at 1
+# here; raise it only once the calibration run shows there is time budget for it.
 # NOTE: VA has no seed parameter, so there is no --seed here; --va-repeats
 # characterizes run-to-run spread instead.
 # --va-onehot is left OFF for a clean like-for-like first comparison.
