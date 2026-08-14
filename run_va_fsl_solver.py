@@ -778,6 +778,14 @@ def print_va_header(
     print(f"    max constraint retries: {args.va_max_retries}", flush=True)
     print(f"    onehot flip option:     {'ON' if args.va_onehot else 'OFF'}", flush=True)
     print(f"  penalty mode:             {args.penalty_mode}", flush=True)
+    print(
+        f"  objective scale:          "
+        f"{'ON  (penalties ~ scale x multiplier)' if args.enable_objective_scale else 'OFF (penalties flat at --min-penalty)'}",
+        flush=True,
+    )
+    print(f"  min penalty (floor):      {float(args.min_penalty):,.2f}", flush=True)
+    print(f"  constraint multiplier:    {float(args.constraint_multiplier):,.2f}"
+          f"{'' if args.enable_objective_scale else '  (inactive: scale is OFF)'}", flush=True)
     print(f"  base miles:               {data['scalar']['base_miles']}", flush=True)
     print(f"  penalty start miles:      {data['scalar']['penalty_start_miles']}", flush=True)
     print(f"  max service miles:        {data['scalar']['max_service_miles']}", flush=True)
