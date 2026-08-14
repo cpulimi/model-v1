@@ -1064,6 +1064,16 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     ref.batch_summary_dataframe(results).to_csv(run_dir / "batch_summary.csv", index=False)
     va_batch_summary_dataframe(results, all_va_stats).to_csv(run_dir / "va_batch_summary.csv", index=False)
     va_repeat_dataframe(all_va_stats).to_csv(run_dir / "va_repeat_summary.csv", index=False)
+
+    # Same filenames and schemas run_qubo_solver emits in within-batch mode, so the
+    # VA and OpenJij adaptive logs can be concatenated and compared directly.
+    if args.adaptive_penalty_mode == "within-batch":
+        ref.batch_adaptive_summary_dataframe(results).to_csv(
+            run_dir / "batch_adaptive_summary.csv", index=False
+        )
+        ref.adaptive_iteration_log_dataframe(results).to_csv(
+            run_dir / "adaptive_iteration_log.csv", index=False
+        )
     pd.DataFrame(all_precision_rows).to_csv(run_dir / "va_precision_audit.csv", index=False)
 
     ref.assignment_rows_dataframe(raw["assignments"], data).to_csv(
