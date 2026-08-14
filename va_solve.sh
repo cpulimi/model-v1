@@ -75,9 +75,15 @@ python run_va_fsl_solver.py \
   --dry-run
 
 # --- Step 2: solve --------------------------------------------------------
-# Flags mirror the OpenJij low baseline so the QUBO is byte-identical and the
-# only variable is the sampler. NOTE: VA has no seed parameter, so there is no
-# --seed here; --va-repeats characterizes run-to-run spread instead.
+# QUBO construction is byte-identical to the OpenJij path; only the sampler
+# changes. PENALTIES: objective scale is OFF by default in run_va_fsl_solver.py,
+# so C1-C4 sit flat at --min-penalty 50000 rather than ~2.51M. Compare these
+# results against the NO-SCALE OpenJij arm (run_aligned_fsl_comparison_noscale.py,
+# scripts/adaptive_scale_sweep_noscale.sh) -- NOT against scale-ON baselines.
+# Pass --enable-objective-scale to switch back to the ~2.51M penalties.
+# --constraint-multiplier is inert while scale is OFF; kept for config parity.
+# NOTE: VA has no seed parameter, so there is no --seed here; --va-repeats
+# characterizes run-to-run spread instead.
 # --va-onehot is left OFF for a clean like-for-like first comparison.
 python run_va_fsl_solver.py \
   --dataset-dir instances_low \
