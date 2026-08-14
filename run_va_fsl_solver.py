@@ -1024,10 +1024,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Base reads; scaled per batch by ref.suggested_num_reads, then passed as VA num_reads.")
     p.add_argument("--num-sweeps", type=int, default=3000, help="VA num_sweeps (VA default is 500).")
     p.add_argument("--penalty-mode", choices=["fixed", "adaptive"], default="adaptive")
-    p.add_argument("--min-penalty", type=float, default=50000.0, help="Penalty floor.")
-    p.add_argument("--constraint-multiplier", type=float, default=5.0)
-    p.add_argument("--disable-objective-scale", action="store_true",
-                   help="Force objective_scale=1.0 so penalties equal the min-penalty floor.")
+    p.add_argument("--min-penalty", type=float, default=50000.0,
+                   help="Penalty floor, and -- with objective scale OFF, the default on this path -- "
+                        "the flat effective penalty for C1-C4.")
+    p.add_argument("--constraint-multiplier", type=float, default=5.0,
+                   help="Only takes effect with --enable-objective-scale; otherwise ignored.")
+    p.add_argument("--enable-objective-scale", action="store_true",
+                   help="Re-enable ref's objective-scale normalization, which lifts penalties to "
+                        "~scale*multiplier (~2.51M on instances_low). OFF by default on the VA path, "
+                        "so penalties sit flat at --min-penalty (50,000). Matches the arm that "
+                        "run_aligned_fsl_comparison_noscale.py produces.")
     for c in ("c1", "c2", "c3", "c4"):
         p.add_argument(f"--min-penalty-{c}", type=float, default=-1.0)
         p.add_argument(f"--constraint-multiplier-{c}", type=float, default=-1.0)
