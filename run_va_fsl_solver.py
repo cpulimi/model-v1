@@ -490,6 +490,12 @@ def solve_va_batch(
     if batch.note:
         print(f"  note: {batch.note}", flush=True)
 
+    adaptive = args.adaptive_penalty_mode == "within-batch"
+    multipliers: dict[str, float] = {"c1": 1.0, "c2": 1.0, "c3": 1.0, "c4": 1.0}
+    max_iterations = int(args.adaptive_penalty_iterations) if adaptive else 1
+    growth = float(args.adaptive_penalty_growth)
+    stagnation_patience = int(args.adaptive_penalty_stagnation_patience)
+
     print("  [1/3] Building aligned manual QUBO dictionary (ref.build_qubo_for_batch)...", flush=True)
     t0 = time.time()
     qubo_meta = ref.build_qubo_for_batch(batch_df, data, args)
