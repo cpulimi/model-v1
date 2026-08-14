@@ -839,6 +839,11 @@ def solve_va_batch(
         open_hubs=list(best_eval["open_hubs"]),
         stocked_pairs=list(best_eval["stocked_pairs"]),
         assignments=list(best_eval["assignments"]),
+        adaptive_iterations_used=int(iterations_used),
+        adaptive_was_feasible=bool(was_feasible),
+        final_penalty_multipliers=dict(multipliers),
+        adaptive_iteration_log=list(iteration_log),
+        adaptive_exit_reason=str(exit_reason),
     )
 
     del Q, qubo_meta
