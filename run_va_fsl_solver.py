@@ -405,6 +405,59 @@ def va_sample_once(
     return results, elapsed
 
 
+def va_sample_with_retries(
+    VectorAnnealing: Any,
+    Q: dict[tuple[str, str], float],
+    args: argparse.Namespace,
+    base_reads: int,
+    one_hot_list: list[list[str]] | None,
+    beta_range: list[float] | None,
+    label: str,
+) -> tuple[list[Any], float, int, int]:
+    """Sample until VA returns something usable.
+
+    Retries only when EVERY read of a call came back with a broken constraint --
+    the "output result with broken constraint / INVALID" case the manual
+    documents, whose advice is to re-run. Returns
+    (results, seconds, attempts_used, retries). An empty result list means every
+    attempt failed; the caller decides what to do about it.
+    """
+    seconds = 0.0
+    retries = 0
+    attempts_used = 0
+
+    for attempt in range(1, int(args.va_max_retries) + 2):
+        attempts_used = attempt
+        results, elapsed = va_sample_once(VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range)
+        seconds += elapsed
+
+        if not results:
+            retries += 1
+            print(f"    {label} attempt {attempt}: VA returned no results ({elapsed:.2f}s) - retrying", flush=True)
+            continue
+
+        flags = [getattr(r, "constraint", None) for r in results]
+        all_broken = len(flags) > 0 and all(f is False for f in flags)
+
+        if not all_broken:
+            print(
+                f"    {label} attempt {attempt}: {len(results)} reads in {elapsed:.2f}s "
+                f"| constraint satisfied {sum(1 for f in flags if f is True)}/{len(flags)}"
+                + (" (VA reported no constraint flag)" if all(f is None for f in flags) else ""),
+                flush=True,
+            )
+            return results, seconds, attempts_used, retries
+
+        retries += 1
+        print(
+            f"    {label} attempt {attempt}: VA returned INVALID (constraint broken on all "
+            f"{len(flags)} reads, {elapsed:.2f}s) - retry {attempt}/{int(args.va_max_retries)}",
+            flush=True,
+        )
+
+    return [], seconds, attempts_used, retries
+
+
 def solve_va_batch(
     VectorAnnealing: Any,
     batch: ref.BatchSpec,
@@ -412,7 +465,18 @@ def solve_va_batch(
     args: argparse.Namespace,
     beta_range: list[float] | None,
 ) -> tuple[ref.BatchResult, list[dict[str, Any]], dict[str, Any]]:
-    """Solve one batch on VA. Returns (BatchResult, precision rows, va stats)."""
+    """Solve one batch on VA. Returns (BatchResult, precision rows, va stats).
+
+    Mirrors ref.run_adaptive_penalty_loop when --adaptive-penalty-mode is
+    within-batch: rebuild the QUBO with grown multipliers for whichever
+    constraints are still violated, resample, repeat until feasible or the
+    iteration budget runs out. The seed line is the only thing dropped -- VA has
+    no seed parameter, and the escalation logic never depended on one.
+
+    This matters most with objective scale OFF: C3's penalty starts at
+    --min-penalty (50,000) while S_lim is 500,000, so stocking at a closed hub
+    is initially 10x cheaper than opening one. Only the escalation fixes that.
+    """
     batch_start = time.time()
     batch_df = data["active"].iloc[batch.row_indices].reset_index(drop=True)
     num_rows = len(batch_df)
