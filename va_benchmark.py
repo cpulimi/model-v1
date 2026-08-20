@@ -515,8 +515,10 @@ def print_trend_analysis(rows: list[dict[str, Any]], mode: str) -> None:
     dens_k = fit_growth_exponent(hubs, [float(r["matrix_density"]) for r in ok])
     print("\n  READ THIS AS:")
     print(f"    - Problem size grows ~linearly (vars ~ hubs^{var_k:.2f}), so the model itself scales cleanly.")
-    print(f"    - VA's memory grows ~hubs^{dense_k:.2f} because it stores the matrix densely,")
-    print(f"      while density itself falls ~hubs^{dens_k:.2f}. Memory, not variable count, binds first.")
+    print(f"    - DEVICE memory grows ~hubs^{dense_k:.2f} because VA stores the matrix densely,")
+    print(f"      while density itself falls ~hubs^{dens_k:.2f}. The card's dense allocation, not the")
+    print("      variable count, is what binds first.")
+    print("    - HOST memory (RSS) grows sub-linearly and stays in the hundreds of MB; it is not a concern.")
     if mode != "full":
         print("    - Annealing time and solution quality are blank: preflight does not sample.")
         print("      Run --mode full on the VE node (sfpga01n) to fill those columns.")
