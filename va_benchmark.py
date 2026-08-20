@@ -255,7 +255,13 @@ def run_full(dataset_dir: Path, cli: argparse.Namespace) -> dict[str, Any]:
         "matrix_density": perf.get("matrix_density"),
         "couplings_per_var": perf.get("avg_couplings_per_var"),
         "dense_bytes": perf.get("max_dense_matrix_bytes"),
-        "sparse_bytes": BLANK,
+        # The solver reports dense bytes and the waste factor; their ratio is the
+        # sparse-equivalent footprint of the same couplings.
+        "sparse_bytes": (
+            float(perf["max_dense_matrix_bytes"]) / float(perf["max_dense_waste_factor"])
+            if perf.get("max_dense_matrix_bytes") and perf.get("max_dense_waste_factor")
+            else BLANK
+        ),
         "dense_waste_factor": perf.get("max_dense_waste_factor"),
         "rss_peak_mb": max(float(perf.get("rss_peak_mb") or 0.0), rss_peak or 0.0),
         "tracemalloc_peak_mb": s["runtime"].get("tracemalloc_peak_mb"),
