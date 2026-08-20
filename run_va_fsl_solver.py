@@ -2,9 +2,25 @@
 """
 Standalone FSL QUBO solver running on the NEC Vector Annealing (VA) engine.
 
-This is a sibling of run_aligned_fsl_comparison.py's QUBO path. The QUBO
-construction is byte-identical to the OpenJij path -- same encoding, same
-batching, same variables -- so the sampler is the only thing that changes.
+This file is fully self-contained: it does NOT import
+run_aligned_fsl_comparison.py. Every helper it needs -- data loading, the
+aligned cost basis, batching, penalty weighting, sample evaluation,
+post-processing and output schemas -- is inlined below, so the solver can be
+copied to a VA node on its own. openjij is never imported here, at any scope.
+
+PROBLEM FORMULATION: the QUBO is built natively with pyqubo. Decision variables
+Z_ijk / Y_jk / X_j are pyqubo `Binary` objects, the objective and the C1-C3
+constraints are written as mathematical expressions, and
+`.compile().to_qubo()` produces the raw {(u, v): coeff} dictionary and the
+constant offset handed to the VA sampler. The penalty weights are pyqubo
+`Placeholder`s, so a batch is compiled ONCE and each adaptive-penalty iteration
+only re-feeds new penalty values -- no rebuild, no recompile.
+
+The encoding is unchanged from the hand-rolled dictionary this replaced:
+variable names, constraint encodings and objective coefficients are identical,
+so results stay comparable to the OpenJij arm. The one visible difference is
+that the C1 "exactly one hub" constant, which the manual construction silently
+dropped, now surfaces explicitly as `to_qubo()`'s offset. See VA OFFSET below.
 
 PENALTY SCALE: objective-scale normalization is OFF by default here, so C1-C4
 penalties sit flat at --min-penalty (50,000) instead of being lifted to
@@ -16,42 +32,49 @@ Pass --enable-objective-scale to restore the scale-ON penalties.
     python run_va_fsl_solver.py --dataset-dir instances_low --dry-run
     python run_va_fsl_solver.py --dataset-dir instances_low --run-root results/va_low
 
-Everything about the model -- batching, variable naming, penalty weighting,
-constraint encoding, sample evaluation, post-processing, output schemas -- is
-imported from run_aligned_fsl_comparison (aliased `ref`) and is NOT
-reimplemented here. This file only:
+VA OFFSET
+---------
+`to_qubo()` returns (Q, offset). The offset is the C1 constant, lam_c1 times the
+number of active demand rows in the batch -- 250M-scale on instances_low. It is
+recorded everywhere (batch plan CSV, batch summary, summary.json) but is NOT
+handed to VectorAnnealing.model() unless --va-include-offset is passed, for two
+reasons:
 
-  1. checks every batch against VA's 100,000-bit / dense-matrix memory ceiling,
-  2. calls VectorAnnealing instead of openjij,
-  3. audits VA's single-precision energies against a float64 recompute.
+  * VA reports energies in single precision. Adding a ~2.5e8 constant to every
+    energy costs about 5 significant digits of resolution and would swamp the
+    fp32 precision audit this script exists to measure.
+  * Energies stay directly comparable to the OpenJij baseline, which samples the
+    same Q with no offset.
 
-openjij is never imported here, at any scope.
-
-Outputs land in <run-root>/va, a sibling of the existing "qubo" and "gurobi"
-directories, using the same filenames and column schemas run_qubo_solver
-writes, so ref.build_combined_outputs and the existing comparison tooling can
-read it unchanged.
+The offset is a constant, so including it shifts every energy equally and cannot
+change which sample is selected. Add `offset` to a reported energy to recover the
+true Hamiltonian value.
 
 DELIBERATE SCOPE NOTES
 ----------------------
 * No seeding. The VA PoC API exposes no seed parameter, so VA runs are not
   reproducible read-for-read. Use --va-repeats N to characterize the spread
   instead; per-repeat statistics land in va_batch_summary.csv.
-* Adaptive penalty IS implemented, and is ON by default. It mirrors
-  ref.run_adaptive_penalty_loop -- rebuild the QUBO with grown multipliers for
-  violated constraints, resample, repeat until feasible -- with the seed line
-  dropped, since VA has no seed and the escalation never depended on one.
-  It is on by default because with objective scale OFF, C3's penalty starts at
-  50,000 against an S_lim of 500,000, so stocking at a closed hub is initially
-  10x cheaper than opening one; only the escalation corrects that.
-  --adaptive-penalty-iterations defaults to 8 rather than ref's 5, because
-  ceil(log(500000/50000)/log(1.5)) = 6 iterations are needed to clear S_lim.
-  Pass --adaptive-penalty-mode off for a single static pass.
+* Adaptive penalty IS implemented, and is ON by default: rebuild the QUBO with
+  grown multipliers for violated constraints, resample, repeat until feasible.
+  The seed line the OpenJij loop carries is dropped, since VA has no seed and
+  the escalation never depended on one. It is on by default because with
+  objective scale OFF, C3's penalty starts at 50,000 against an S_lim of
+  500,000, so stocking at a closed hub is initially 10x cheaper than opening
+  one; only the escalation corrects that.
+  --adaptive-penalty-iterations defaults to 8 rather than the OpenJij path's 5,
+  because ceil(log(500000/50000)/log(1.5)) = 6 iterations are needed to clear
+  S_lim. Pass --adaptive-penalty-mode off for a single static pass.
 * No retry-reads escalation (--max-stages / --retry-reads-boost). Each batch
   gets one VA sampling call per repeat, plus constraint-failure retries.
 
+Outputs land in <run-root>/va, a sibling of the existing "qubo" and "gurobi"
+directories, using the same filenames and column schemas the OpenJij runner
+writes, so run_aligned_fsl_comparison.build_combined_outputs and the existing
+comparison tooling can read it unchanged.
+
 Environment (per NEC Vector Annealing PoC Manual, 2nd Edition, Nov 2022):
-    Python 3.8, numpy >= 1.22.3, pyqubo >= 1.0.13, and
+    Python 3.8, numpy >= 1.22.3, pyqubo >= 1.0.13, pandas, and
     export PYTHONPATH=/opt/va/VApoc_0201/libexec/VectorAnnealing/python:${PYTHONPATH}
 That manual documents the 2022 PoC release; the version installed on this
 cluster may differ. The VA module version is printed at startup when it
@@ -68,22 +91,1452 @@ import statistics
 import sys
 import time
 import tracemalloc
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import pandas as pd
 
-# Import the reference implementation as a library. It imports openjij only
-# inside build_sampler() and solve_qubo_batch(), neither of which this file
-# calls, so importing it pulls in no sampler backend.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import run_aligned_fsl_comparison as ref  # noqa: E402
+try:
+    from pyqubo import Binary, Placeholder
+except ModuleNotFoundError as exc:  # pragma: no cover - environment guard
+    raise SystemExit(
+        "ERROR: pyqubo is required to build the QUBO.\n"
+        f"  underlying error: {exc}\n"
+        "  install it with:  pip install 'pyqubo>=1.0.13'"
+    )
+
+try:
+    import psutil  # type: ignore
+except ModuleNotFoundError:
+    psutil = None
 
 
 # VA hard specification, from the PoC manual.
 VA_HARD_MAX_VARS = 100_000          # "Binary data size: up to 100 thousand bit"
 VA_DENSE_BYTES_PER_ENTRY = 4        # 32-bit resolution, dense full-connection matrix
 VA_MANUAL_REF = "NEC Vector Annealing PoC Manual, 2nd Edition (Nov 2022)"
+
+# Coefficients at or below this magnitude are dropped from the compiled QUBO.
+# The hand-rolled construction this replaced applied the same tolerance when
+# accumulating terms, so pruning keeps the interaction counts in batch_summary.csv
+# comparable with the historical OpenJij runs.
+QUBO_ZERO_TOLERANCE = 1e-12
+
+SCALAR_COLUMNS = (
+    "C",
+    "h_s",
+    "h_d",
+    "d_s",
+    "L",
+    "S_lim",
+    "S_var",
+    "lambda_1",
+    "lambda_2",
+    "lambda_3",
+    "base_miles",
+    "penalty_start_miles",
+    "max_service_miles",
+)
+
+REQUIRED_FILES = (
+    "demand.csv",
+    "distances.csv",
+    "hubs.csv",
+    "parameters.csv",
+    "parts.csv",
+    "zips.csv",
+)
+
+ID_COLUMNS = {"hub_id", "zip_id", "part_id", "anchor_id", "region_code"}
+
+
+@dataclass(frozen=True)
+class BatchSpec:
+    batch_id: int
+    row_indices: list[int]
+    estimated_z_vars: int
+    note: str = ""
+
+
+@dataclass
+class BatchResult:
+    batch_id: int
+    num_rows: int
+    num_parts: int
+    num_z: int
+    num_y: int
+    num_x: int
+    interactions: int
+    build_seconds: float
+    sample_seconds: float
+    eval_seconds: float
+    total_seconds: float
+    stage_used: int
+    suggested_reads: int
+    energy: float
+    reconstructed_cost: float
+    c1_violations: int
+    c2_violations: int
+    c3_violations: int
+    c4_violations: int
+    penalty_c1: float
+    penalty_c2: float
+    penalty_c3: float
+    open_hubs: list[str]
+    stocked_pairs: list[tuple[str, str]]
+    assignments: list[tuple[str, str, str]]
+    adaptive_iterations_used: int = 0
+    adaptive_was_feasible: bool = False
+    final_penalty_multipliers: dict[str, float] = field(
+        default_factory=lambda: {"c1": 1.0, "c2": 1.0, "c3": 1.0, "c4": 1.0}
+    )
+    adaptive_iteration_log: list[dict] = field(default_factory=list)
+    adaptive_exit_reason: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+
+def now_stamp() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def money(x: float | int | None) -> str:
+    if x is None:
+        return "n/a"
+    return f"${float(x):,.2f}"
+
+
+def peak_or_current_rss_mb() -> float:
+    """Best-effort peak or current RSS in MB, cross-platform."""
+    if psutil is not None:
+        try:
+            proc = psutil.Process()
+            if hasattr(proc, "memory_full_info"):
+                info = proc.memory_full_info()
+                peak = getattr(info, "peak_wset", None)  # Windows peak working set
+                if peak:
+                    return float(peak) / (1024.0 * 1024.0)
+            return float(proc.memory_info().rss) / (1024.0 * 1024.0)
+        except Exception:
+            pass
+
+    try:
+        import resource  # type: ignore
+
+        usage = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        if sys.platform == "darwin":
+            return usage / (1024.0 * 1024.0)
+        return usage / 1024.0
+    except Exception:
+        return 0.0
+
+
+def memory_report_mb() -> tuple[float, float]:
+    current_mb = 0.0
+    peak_mb = 0.0
+    try:
+        current, peak = tracemalloc.get_traced_memory()
+        current_mb = current / (1024.0 * 1024.0)
+        peak_mb = peak / (1024.0 * 1024.0)
+    except Exception:
+        pass
+
+    rss = peak_or_current_rss_mb()
+    current_mb = max(current_mb, rss)
+    peak_mb = max(peak_mb, current_mb)
+    return peak_mb, current_mb
+
+
+def human_bytes(n: int) -> str:
+    x = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if x < 1024.0 or unit == "TiB":
+            return f"{x:,.1f} {unit}"
+        x /= 1024.0
+    return f"{x:,.1f} TiB"
+
+
+# ---------------------------------------------------------------------------
+# Dataset loading
+# ---------------------------------------------------------------------------
+
+
+def normalize_id_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col in out.columns:
+        if col in ID_COLUMNS or col.endswith("_id"):
+            out[col] = out[col].astype(str)
+    return out
+
+
+def read_csv_required(root: Path, name: str) -> pd.DataFrame:
+    path = root / name
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing required file: {path}")
+    return normalize_id_columns(pd.read_csv(path))
+
+
+def require_columns(df: pd.DataFrame, filename: str, columns: Iterable[str]) -> None:
+    missing = [c for c in columns if c not in df.columns]
+    if missing:
+        raise ValueError(f"{filename} missing required columns: {missing}")
+
+
+def load_problem_data(
+    dataset_dir: Path | str,
+    *,
+    max_service_miles_override: float | None,
+    penalty_start_miles_override: float | None,
+    top_hubs_per_zip: int | None,
+    max_parts_total: int | None,
+) -> dict[str, Any]:
+    root = Path(dataset_dir).expanduser().resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"Dataset directory not found: {root}")
+    missing_files = [name for name in REQUIRED_FILES if not (root / name).is_file()]
+    if missing_files:
+        raise FileNotFoundError(f"Dataset directory is missing required files: {missing_files}")
+
+    params = read_csv_required(root, "parameters.csv")
+    if params.empty:
+        raise ValueError(f"Empty parameters.csv in {root}")
+    row = params.iloc[0].to_dict()
+    missing_scalars = [c for c in SCALAR_COLUMNS if c not in row]
+    if missing_scalars:
+        raise ValueError(f"parameters.csv missing columns: {missing_scalars}")
+
+    scalar = {c: float(row[c]) for c in SCALAR_COLUMNS}
+    scalar["L"] = int(float(scalar["L"]))
+    if max_service_miles_override is not None and float(max_service_miles_override) > 0:
+        scalar["max_service_miles"] = float(max_service_miles_override)
+    if penalty_start_miles_override is not None and float(penalty_start_miles_override) >= 0:
+        scalar["penalty_start_miles"] = float(penalty_start_miles_override)
+
+    hubs = read_csv_required(root, "hubs.csv")
+    parts = read_csv_required(root, "parts.csv")
+    zips = read_csv_required(root, "zips.csv")
+    demand = read_csv_required(root, "demand.csv")
+    distances = read_csv_required(root, "distances.csv")
+
+    require_columns(hubs, "hubs.csv", ["hub_id", "T_j"])
+    require_columns(parts, "parts.csv", ["part_id"])
+    require_columns(zips, "zips.csv", ["zip_id"])
+    require_columns(demand, "demand.csv", ["zip_id", "part_id", "Q_ik", "b_ik"])
+    require_columns(distances, "distances.csv", ["zip_id", "hub_id", "d_ij"])
+
+    price_col = "P_k" if "P_k" in parts.columns else "price"
+    if price_col not in parts.columns:
+        raise ValueError("parts.csv must contain P_k or price")
+    if price_col != "P_k":
+        parts = parts.rename(columns={price_col: "P_k"})
+
+    hubs = hubs.copy()
+    parts = parts.copy()
+    zips = zips.copy()
+    demand = demand.copy()
+    distances = distances.copy()
+
+    hubs["T_j"] = pd.to_numeric(hubs["T_j"], errors="raise").astype(int)
+    if "B_j" in hubs.columns:
+        hubs["B_j"] = pd.to_numeric(hubs["B_j"], errors="coerce").fillna(0.0)
+    else:
+        hubs["B_j"] = 0.0
+    parts["P_k"] = pd.to_numeric(parts["P_k"], errors="raise")
+    demand["Q_ik"] = pd.to_numeric(demand["Q_ik"], errors="raise")
+    demand["b_ik"] = pd.to_numeric(demand["b_ik"], errors="raise")
+    distances["d_ij"] = pd.to_numeric(distances["d_ij"], errors="raise")
+
+    if hubs.duplicated("hub_id").any():
+        raise ValueError("hubs.csv has duplicate hub_id values")
+    if parts.duplicated("part_id").any():
+        raise ValueError("parts.csv has duplicate part_id values")
+
+    selected_parts = sorted(parts["part_id"].unique().tolist())
+    if max_parts_total is not None and int(max_parts_total) > 0:
+        selected_parts = selected_parts[: int(max_parts_total)]
+    selected_parts_set = set(selected_parts)
+    parts = parts[parts["part_id"].isin(selected_parts_set)].copy()
+    demand = demand[demand["part_id"].isin(selected_parts_set)].copy()
+
+    missing_parts = sorted(set(demand.loc[demand["Q_ik"] > 0, "part_id"]) - set(parts["part_id"]))
+    if missing_parts:
+        raise ValueError(f"parts.csv is missing demanded parts. Examples: {missing_parts[:10]}")
+    missing_zips = sorted(set(demand.loc[demand["Q_ik"] > 0, "zip_id"]) - set(zips["zip_id"]))
+    if missing_zips:
+        raise ValueError(f"zips.csv is missing demanded ZIPs. Examples: {missing_zips[:10]}")
+
+    active = demand[demand["Q_ik"] > 0][["zip_id", "part_id", "b_ik"]].copy()
+    active = (
+        active.groupby(["zip_id", "part_id"], as_index=False, sort=False)["b_ik"]
+        .sum()
+        .reset_index(drop=True)
+    )
+    if active.empty:
+        raise ValueError("No active demand rows after filtering")
+
+    max_service_miles = float(scalar["max_service_miles"])
+    dist_f = distances[distances["d_ij"] <= max_service_miles].copy()
+    if dist_f.empty:
+        raise ValueError(f"No distance rows with d_ij <= max_service_miles={max_service_miles}")
+
+    dist_f = dist_f.sort_values(["zip_id", "d_ij", "hub_id"])
+    if top_hubs_per_zip is not None and int(top_hubs_per_zip) > 0:
+        dist_f = dist_f.groupby("zip_id", sort=False).head(int(top_hubs_per_zip)).copy()
+
+    zip_to_hubs: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    d_map: dict[tuple[str, str], float] = {}
+    for r in dist_f[["zip_id", "hub_id", "d_ij"]].itertuples(index=False):
+        i, j, dij = str(r.zip_id), str(r.hub_id), float(r.d_ij)
+        zip_to_hubs[i].append((j, dij))
+        d_map[(i, j)] = dij
+    for i in list(zip_to_hubs):
+        zip_to_hubs[i].sort(key=lambda t: (t[1], t[0]))
+
+    no_candidate = sorted(set(active["zip_id"]) - set(zip_to_hubs))
+    if no_candidate:
+        examples = active[active["zip_id"].isin(no_candidate)][["zip_id", "part_id"]].head(10)
+        raise ValueError(
+            "Some active ZIP-part pairs have no eligible hub within max_service_miles. Examples:\n"
+            + examples.to_string(index=False)
+        )
+
+    active_parts = set(active["part_id"].unique().tolist())
+    part_order = [p for p in selected_parts if p in active_parts]
+
+    p_map = {str(r.part_id): float(r.P_k) for r in parts[["part_id", "P_k"]].itertuples(index=False)}
+    t_map = {str(r.hub_id): int(r.T_j) for r in hubs[["hub_id", "T_j"]].itertuples(index=False)}
+    b_cap_map = {str(r.hub_id): float(r.B_j) for r in hubs[["hub_id", "B_j"]].itertuples(index=False)}
+    b_demand = {(str(r.zip_id), str(r.part_id)): float(r.b_ik) for r in active.itertuples(index=False)}
+
+    baseline_path = root / "optional_baseline_part_homes.csv"
+    parameter_key_path = root / "optional_parameter_key.csv"
+
+    return {
+        "dataset_dir": str(root),
+        "dataset_name": root.name,
+        "scalar": scalar,
+        "hubs": hubs,
+        "parts": parts,
+        "zips": zips,
+        "demand": demand,
+        "distances_filtered": dist_f,
+        "active": active,
+        "part_order": part_order,
+        "P": p_map,
+        "T": t_map,
+        "B_j": b_cap_map,
+        "B": b_demand,
+        "D": d_map,
+        "zip_to_hubs": dict(zip_to_hubs),
+        "J": sorted(hubs["hub_id"].unique().tolist()),
+        "K": selected_parts,
+        "max_service_miles": max_service_miles,
+        "top_hubs_per_zip": top_hubs_per_zip,
+        "max_parts_total": max_parts_total,
+        "baseline_part_homes_rows": len(pd.read_csv(baseline_path)) if baseline_path.is_file() else 0,
+        "parameter_key_rows": len(pd.read_csv(parameter_key_path)) if parameter_key_path.is_file() else 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Aligned cost basis
+# ---------------------------------------------------------------------------
+
+
+def assignment_cost_by_values(b: float, dij: float, scalar: dict[str, Any]) -> dict[str, float]:
+    miles_after_base = max(0.0, float(dij) - float(scalar["base_miles"]))
+    miles_after_penalty_start = max(0.0, float(dij) - float(scalar["penalty_start_miles"]))
+    linehaul = float(scalar["lambda_1"]) * float(scalar["h_s"]) * float(b)
+    distance = float(scalar["lambda_2"]) * float(scalar["h_d"]) * float(b) * miles_after_base
+    penalty = float(scalar["lambda_3"]) * float(b) * miles_after_penalty_start
+    return {
+        "b_ik": float(b),
+        "d_ij": float(dij),
+        "miles_after_base": float(miles_after_base),
+        "miles_after_penalty_start": float(miles_after_penalty_start),
+        "linehaul_cost": float(linehaul),
+        "distance_cost": float(distance),
+        "distance_penalty_cost": float(penalty),
+        "assignment_cost": float(linehaul + distance + penalty),
+        "sla_violation": bool(float(dij) > float(scalar["penalty_start_miles"])),
+    }
+
+
+def assignment_cost(zip_id: str, hub_id: str, part_id: str, data: dict[str, Any]) -> dict[str, float]:
+    b = float(data["B"].get((str(zip_id), str(part_id)), 0.0))
+    dij = float(data["D"].get((str(zip_id), str(hub_id)), 0.0))
+    return assignment_cost_by_values(b, dij, data["scalar"])
+
+
+def compute_solution_cost(
+    assignments: Iterable[tuple[str, str, str]],
+    stocked_pairs: Iterable[tuple[str, str]],
+    open_hubs: Iterable[str],
+    data: dict[str, Any],
+) -> dict[str, float]:
+    scalar = data["scalar"]
+    assignment_set = set((str(i), str(j), str(k)) for i, j, k in assignments)
+    stocked_set = set((str(j), str(k)) for j, k in stocked_pairs)
+    open_set = set(str(j) for j in open_hubs)
+
+    inventory_cost = sum(float(data["P"].get(k, 0.0)) for _, k in stocked_set)
+    fixed_open_cost = float(scalar["S_lim"]) * float(len(open_set))
+    transfer_cost = sum((1 - int(data["T"].get(j, 0))) * float(scalar["C"]) for j, _ in stocked_set)
+
+    by_hub: dict[str, int] = defaultdict(int)
+    for j, _ in stocked_set:
+        by_hub[j] += 1
+    overflow_units = sum(max(0, cnt - int(scalar["L"])) for cnt in by_hub.values())
+    overflow_cost = float(scalar["S_var"]) * float(overflow_units)
+
+    transport_cost = 0.0
+    for i, j, k in assignment_set:
+        transport_cost += assignment_cost(i, j, k, data)["assignment_cost"]
+
+    total = inventory_cost + fixed_open_cost + overflow_cost + transfer_cost + transport_cost
+    return {
+        "total_cost": float(total),
+        "inventory_cost": float(inventory_cost),
+        "fixed_open_hub_cost": float(fixed_open_cost),
+        "overflow_storage_cost": float(overflow_cost),
+        "new_hub_transfer_cost": float(transfer_cost),
+        "assignment_transport_cost": float(transport_cost),
+        "overflow_units": float(overflow_units),
+    }
+
+
+def global_audit(
+    assignments: Iterable[tuple[str, str, str]],
+    stocked_pairs: Iterable[tuple[str, str]],
+    open_hubs: Iterable[str],
+    data: dict[str, Any],
+) -> dict[str, int]:
+    assignment_list = [(str(i), str(j), str(k)) for i, j, k in assignments]
+    stocked_set = set((str(j), str(k)) for j, k in stocked_pairs)
+    open_set = set(str(j) for j in open_hubs)
+
+    active_pairs = set(
+        (str(r.zip_id), str(r.part_id))
+        for r in data["active"][["zip_id", "part_id"]].itertuples(index=False)
+    )
+    candidate_by_zip = {i: {j for j, _ in hubs} for i, hubs in data["zip_to_hubs"].items()}
+
+    assignment_map: dict[tuple[str, str], list[str]] = defaultdict(list)
+    invalid_hub = 0
+    max_service_violations = 0
+    sla_distance_violations = 0
+    for i, j, k in assignment_list:
+        assignment_map[(i, k)].append(j)
+        if j not in candidate_by_zip.get(i, set()):
+            invalid_hub += 1
+        dij = float(data["D"].get((i, j), math.inf))
+        if not math.isfinite(dij) or dij > float(data["scalar"]["max_service_miles"]):
+            max_service_violations += 1
+        if math.isfinite(dij) and dij > float(data["scalar"]["penalty_start_miles"]):
+            sla_distance_violations += 1
+
+    missing = 0
+    multiple = 0
+    for pair in active_pairs:
+        count = len(assignment_map.get(pair, []))
+        if count == 0:
+            missing += 1
+        elif count != 1:
+            multiple += 1
+    extra = sum(1 for pair in assignment_map if pair not in active_pairs)
+
+    c1 = missing + multiple + invalid_hub + extra
+    c2 = sum(1 for _, j, k in assignment_list if (j, k) not in stocked_set)
+    c3 = sum(1 for j, _ in stocked_set if j not in open_set)
+
+    by_hub: dict[str, int] = defaultdict(int)
+    for j, _ in stocked_set:
+        by_hub[j] += 1
+    l_cap = int(data["scalar"]["L"])
+    c4_hubs_over_l = sum(1 for c in by_hub.values() if c > l_cap)
+    c4_overflow_units = sum(max(0, c - l_cap) for c in by_hub.values())
+
+    structural = c1 + c2 + c3
+    return {
+        "c1_assignment_violations": int(c1),
+        "c1_missing_assignments": int(missing),
+        "c1_multiple_assignments": int(multiple),
+        "c1_invalid_hub_assignments": int(invalid_hub),
+        "c1_extra_assignments": int(extra),
+        "c2_assignment_without_stock": int(c2),
+        "c3_stock_without_open_hub": int(c3),
+        "c4_hubs_over_L": int(c4_hubs_over_l),
+        "c4_total_overflow_units": int(c4_overflow_units),
+        "max_service_distance_violations": int(max_service_violations),
+        "sla_distance_violations": int(sla_distance_violations),
+        "total_structural_violations": int(structural),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Solution output schemas (identical to the OpenJij runner's)
+# ---------------------------------------------------------------------------
+
+
+def assignment_rows_dataframe(
+    assignments: Iterable[tuple[str, str, str]],
+    data: dict[str, Any],
+    assignment_sources: dict[tuple[str, str, str], str] | None = None,
+) -> pd.DataFrame:
+    rows = []
+    sources = assignment_sources or {}
+    for i, j, k in sorted((str(i), str(j), str(k)) for i, j, k in assignments):
+        c = assignment_cost(i, j, k, data)
+        rows.append(
+            {
+                "zip_id": i,
+                "hub_id": j,
+                "part_id": k,
+                "b_ik": c["b_ik"],
+                "d_ij": c["d_ij"],
+                "miles_after_base": c["miles_after_base"],
+                "miles_after_penalty_start": c["miles_after_penalty_start"],
+                "sla_violation": int(bool(c["sla_violation"])),
+                "linehaul_cost": c["linehaul_cost"],
+                "distance_cost": c["distance_cost"],
+                "distance_penalty_cost": c["distance_penalty_cost"],
+                "assignment_cost": c["assignment_cost"],
+                "source": sources.get((i, j, k), "raw_or_solver"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def stocked_pairs_dataframe(stocked_pairs: Iterable[tuple[str, str]], data: dict[str, Any]) -> pd.DataFrame:
+    rows = []
+    for j, k in sorted((str(j), str(k)) for j, k in stocked_pairs):
+        rows.append(
+            {
+                "hub_id": j,
+                "part_id": k,
+                "part_cost_P_k": float(data["P"].get(k, 0.0)),
+                "hub_existing_T_j": int(data["T"].get(j, 0)),
+                "new_hub_transfer_cost": (1 - int(data["T"].get(j, 0))) * float(data["scalar"]["C"]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def hub_status_dataframe(
+    open_hubs: Iterable[str],
+    stocked_pairs: Iterable[tuple[str, str]],
+    assignments: Iterable[tuple[str, str, str]],
+    data: dict[str, Any],
+) -> pd.DataFrame:
+    open_set = set(str(j) for j in open_hubs)
+    stock_count: dict[str, int] = defaultdict(int)
+    assign_count: dict[str, int] = defaultdict(int)
+    for j, _ in stocked_pairs:
+        stock_count[str(j)] += 1
+    for _, j, _ in assignments:
+        assign_count[str(j)] += 1
+
+    rows = []
+    for j in data["J"]:
+        opened = j in open_set
+        existing = int(data["T"].get(j, 0))
+        rows.append(
+            {
+                "hub_id": j,
+                "status": "OPEN" if opened else "CLOSED",
+                "opened": int(opened),
+                "closed": int(not opened),
+                "existing_T_j": existing,
+                "opened_new_hub": int(opened and existing == 0),
+                "stocked_part_count": int(stock_count.get(j, 0)),
+                "assignment_count": int(assign_count.get(j, 0)),
+                "fixed_open_cost_if_open": float(data["scalar"]["S_lim"]) if opened else 0.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def final_results_block(summary: dict[str, Any], title: str) -> str:
+    sol = summary["final_solution"]
+    cost = sol["cost"]
+    audit = sol["audit"]
+    rt = summary["runtime"]
+    lines = [
+        "=" * 76,
+        title,
+        "=" * 76,
+        f"  total cost:                 {money(cost['total_cost'])}",
+        f"  inventory cost:             {money(cost['inventory_cost'])}",
+        f"  fixed open-hub cost:        {money(cost['fixed_open_hub_cost'])}",
+        f"  overflow storage cost:      {money(cost['overflow_storage_cost'])}",
+        f"  new-hub transfer cost:      {money(cost['new_hub_transfer_cost'])}",
+        f"  assignment transport cost:  {money(cost['assignment_transport_cost'])}",
+        f"  open hubs:                  {sol['open_hubs_count']:,}",
+        f"  closed hubs:                {sol['closed_hubs_count']:,}",
+        f"  stocked hub-part pairs:     {sol['stocked_pairs_count']:,}",
+        f"  hub-zip-part pairings:      {sol['assignments_count']:,}",
+        f"  structural violations:      {audit['total_structural_violations']:,}",
+        f"  SLA distance violations:    {audit['sla_distance_violations']:,}",
+        f"  wall time:                  {rt['wall_seconds']:,.2f}s",
+        f"  peak/current memory:        {rt['peak_memory_mb']:,.1f}/{rt['current_memory_mb']:,.1f} MB",
+        f"  output folder:              {summary['output_dir']}",
+        "=" * 76,
+    ]
+    return "\n".join(lines)
+
+
+def write_solution_outputs(
+    run_dir: Path,
+    *,
+    solver_name: str,
+    data: dict[str, Any],
+    assignments: list[tuple[str, str, str]],
+    stocked_pairs: list[tuple[str, str]],
+    open_hubs: list[str],
+    runtime: dict[str, Any],
+    extra: dict[str, Any] | None = None,
+    assignment_sources: dict[tuple[str, str, str], str] | None = None,
+) -> dict[str, Any]:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    closed_count = int(len(data["J"]) - len(set(open_hubs)))
+    cost = compute_solution_cost(assignments, stocked_pairs, open_hubs, data)
+    audit = global_audit(assignments, stocked_pairs, open_hubs, data)
+
+    assignment_rows_dataframe(assignments, data, assignment_sources).to_csv(
+        run_dir / "hub_zip_part_pairings.csv", index=False
+    )
+    stocked_pairs_dataframe(stocked_pairs, data).to_csv(run_dir / "stocked_hub_part_pairs.csv", index=False)
+    stocked_pairs_dataframe(stocked_pairs, data).to_csv(run_dir / "stocked_pairs.csv", index=False)
+    hub_status_dataframe(open_hubs, stocked_pairs, assignments, data).to_csv(
+        run_dir / "hubs_open_closed.csv", index=False
+    )
+    pd.DataFrame({"hub_id": sorted(set(open_hubs))}).to_csv(run_dir / "open_hubs.csv", index=False)
+    pd.DataFrame({"hub_id": sorted(set(data["J"]) - set(open_hubs))}).to_csv(
+        run_dir / "closed_hubs.csv", index=False
+    )
+
+    summary = {
+        "solver": solver_name,
+        "dataset": {
+            "dataset_name": data["dataset_name"],
+            "dataset_dir": data["dataset_dir"],
+            "hubs": int(len(data["J"])),
+            "parts": int(len(data["K"])),
+            "zips": int(len(data["zips"])),
+            "active_demand_pairs": int(len(data["active"])),
+            "max_service_miles": float(data["scalar"]["max_service_miles"]),
+            "base_miles": float(data["scalar"]["base_miles"]),
+            "penalty_start_miles": float(data["scalar"]["penalty_start_miles"]),
+            "top_hubs_per_zip": data["top_hubs_per_zip"],
+            "max_parts_total": data["max_parts_total"],
+        },
+        "final_solution": {
+            "open_hubs_count": int(len(set(open_hubs))),
+            "closed_hubs_count": closed_count,
+            "stocked_pairs_count": int(len(set(stocked_pairs))),
+            "assignments_count": int(len(set(assignments))),
+            "cost": cost,
+            "audit": audit,
+        },
+        "runtime": runtime,
+        "output_dir": str(run_dir),
+        "extra": extra or {},
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    (run_dir / "summary.txt").write_text(
+        final_results_block(summary, f"{solver_name.upper()} FINAL RESULTS") + "\n", encoding="utf-8"
+    )
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# Batching
+# ---------------------------------------------------------------------------
+
+
+def build_batches(
+    active: pd.DataFrame,
+    part_order: list[str],
+    zip_to_hubs: dict[str, list[tuple[str, float]]],
+    *,
+    part_batch_size: int,
+    max_z_vars_per_batch: int,
+) -> list[BatchSpec]:
+    if part_batch_size <= 0:
+        raise ValueError("--part-batch-size must be > 0")
+    if max_z_vars_per_batch <= 0:
+        raise ValueError("--max-z-vars-per-batch must be > 0")
+
+    df = active.reset_index(drop=True).copy()
+    row_z = df["zip_id"].map(lambda z: len(zip_to_hubs.get(str(z), ())))
+    if (row_z <= 0).any():
+        bad = df.loc[row_z <= 0, ["zip_id", "part_id"]].head(5).to_dict("records")
+        raise ValueError(f"Active demand rows without candidate hubs: {bad}")
+    if (row_z > max_z_vars_per_batch).any():
+        bad = df.loc[row_z > max_z_vars_per_batch, ["zip_id", "part_id"]].head(5).to_dict("records")
+        raise ValueError(
+            "A single demand row has more candidate hubs than --max-z-vars-per-batch. "
+            f"Examples: {bad}. Increase the cap or reduce --top-hubs-per-zip."
+        )
+
+    rows_by_part: dict[str, list[int]] = defaultdict(list)
+    for idx, part_id in enumerate(df["part_id"].tolist()):
+        rows_by_part[str(part_id)].append(idx)
+
+    batches: list[BatchSpec] = []
+    current: list[int] = []
+    current_parts: set[str] = set()
+    current_z = 0
+
+    def flush(note: str = "") -> None:
+        nonlocal current, current_parts, current_z
+        if current:
+            batches.append(BatchSpec(len(batches) + 1, list(current), int(current_z), note))
+        current = []
+        current_parts = set()
+        current_z = 0
+
+    for part_id in part_order:
+        idxs = rows_by_part.get(str(part_id), [])
+        if not idxs:
+            continue
+        part_z = int(row_z.iloc[idxs].sum())
+
+        if part_z > max_z_vars_per_batch:
+            flush()
+            chunk: list[int] = []
+            chunk_z = 0
+            for idx in idxs:
+                rz = int(row_z.iloc[idx])
+                if chunk and chunk_z + rz > max_z_vars_per_batch:
+                    batches.append(
+                        BatchSpec(len(batches) + 1, list(chunk), int(chunk_z), f"split_large_part:{part_id}")
+                    )
+                    chunk = []
+                    chunk_z = 0
+                chunk.append(idx)
+                chunk_z += rz
+            if chunk:
+                batches.append(
+                    BatchSpec(len(batches) + 1, list(chunk), int(chunk_z), f"split_large_part:{part_id}")
+                )
+            continue
+
+        if current and (current_z + part_z > max_z_vars_per_batch or len(current_parts) >= part_batch_size):
+            flush()
+        current.extend(idxs)
+        current_parts.add(str(part_id))
+        current_z += part_z
+
+    flush()
+    return batches
+
+
+# ---------------------------------------------------------------------------
+# Penalty weighting
+# ---------------------------------------------------------------------------
+
+
+def estimate_objective_scale(batch_df: pd.DataFrame, data: dict[str, Any]) -> float:
+    if batch_df.empty:
+        return 1.0
+    scalar = data["scalar"]
+    part_ids = batch_df["part_id"].unique().tolist()
+    max_part_cost = max((float(data["P"].get(k, 0.0)) for k in part_ids), default=0.0)
+    max_b = float(batch_df["b_ik"].max()) if "b_ik" in batch_df.columns else 0.0
+    max_d = max((float(v) for v in data["D"].values()), default=0.0)
+    max_transport = (
+        float(scalar["lambda_1"]) * float(scalar["h_s"]) * max_b
+        + float(scalar["lambda_2"]) * float(scalar["h_d"]) * max_b * max(0.0, max_d - float(scalar["base_miles"]))
+        + float(scalar["lambda_3"]) * max_b * max(0.0, max_d - float(scalar["penalty_start_miles"]))
+    )
+    return max(1.0, max_part_cost + float(scalar["C"]) + float(scalar["S_lim"]) + max_transport)
+
+
+def penalty_weights(
+    batch_df: pd.DataFrame,
+    data: dict[str, Any],
+    args: argparse.Namespace,
+    multipliers: dict[str, float] | None = None,
+    return_diagnostics: bool = False,
+) -> dict[str, float] | tuple[dict[str, float], dict[str, dict[str, Any]]]:
+    scale = 1.0 if getattr(args, "disable_objective_scale", False) else estimate_objective_scale(batch_df, data)
+    out: dict[str, float] = {}
+    diagnostics: dict[str, dict[str, Any]] = {}
+    for c in ("c1", "c2", "c3", "c4"):
+        override_min = float(getattr(args, f"min_penalty_{c}", -1.0))
+        override_mult = float(getattr(args, f"constraint_multiplier_{c}", -1.0))
+        min_pen = override_min if override_min >= 0 else float(args.min_penalty)
+        mult = override_mult if override_mult >= 0 else float(args.constraint_multiplier)
+        scaled_value = float(scale) * float(mult)
+        if args.penalty_mode == "fixed":
+            out[c] = float(min_pen)
+        else:
+            out[c] = max(float(min_pen), scaled_value)
+
+        if return_diagnostics:
+            # "floor" means the min_penalty floor won; "scaled" means scale*mult won.
+            # In fixed mode the floor is used unconditionally.
+            if args.penalty_mode == "fixed" or float(min_pen) >= scaled_value:
+                binding_branch = "floor"
+            else:
+                binding_branch = "scaled"
+            adaptive_mult = float(multipliers[c]) if (multipliers is not None and c in multipliers) else 1.0
+            diagnostics[c] = {
+                "objective_scale": float(scale),
+                "min_pen": float(min_pen),
+                "mult": float(mult),
+                "scaled_value": float(scaled_value),
+                "chosen_value": float(out[c]),
+                "binding_branch": binding_branch,
+                "adaptive_mult": float(adaptive_mult),
+                "final_value": float(out[c]) * float(adaptive_mult),
+            }
+
+    # Adaptive multipliers (within-batch adaptive penalty). When None, the
+    # returned penalties are bit-identical to the static behavior.
+    if multipliers is not None:
+        for c in ("c1", "c2", "c3", "c4"):
+            if c in multipliers:
+                out[c] = out[c] * float(multipliers[c])
+
+    if return_diagnostics:
+        return out, diagnostics
+    return out
+
+
+# ---------------------------------------------------------------------------
+# PyQUBO formulation
+# ---------------------------------------------------------------------------
+#
+# Decision variables
+#   Z_ijk  1 if ZIP i is served part k from hub j
+#   Y_jk   1 if hub j stocks part k
+#   X_j    1 if hub j is open
+#
+# Objective (minimize)
+#   sum_ijk transport(i,j,k) Z_ijk
+# + sum_jk  (P_k + (1 - T_j) C) Y_jk
+# + sum_j   S_lim X_j
+#
+# Constraints, as quadratic penalties with Placeholder weights
+#   C1  sum_j Z_ijk == 1     ->  lam_c1 * (sum_j Z_ijk - 1)^2
+#   C2  Z_ijk <= Y_jk        ->  lam_c2 * Z_ijk (1 - Y_jk)
+#   C3  Y_jk  <= X_j         ->  lam_c3 * Y_jk  (1 - X_j)
+#   C4  sum_k Y_jk <= L      ->  NOT hard-encoded; see c4_note. Pure QUBO needs
+#                                bounded slack variables for this inequality,
+#                                and the final cost already prices overflow.
+#
+# The penalties are Placeholders rather than literals so a batch compiles ONCE
+# and the adaptive loop re-feeds grown weights through to_qubo(feed_dict=...).
+# Variable counts are invariant under the weights, so the VA ceiling check made
+# in preflight stays valid for every adaptive iteration.
+
+PLACEHOLDER_C1 = "lam_c1"
+PLACEHOLDER_C2 = "lam_c2"
+PLACEHOLDER_C3 = "lam_c3"
+
+
+def var_x(hub_id: str) -> str:
+    return f"X|{hub_id}"
+
+
+def var_y(hub_id: str, part_id: str) -> str:
+    return f"Y|{hub_id}|{part_id}"
+
+
+def var_z(zip_id: str, hub_id: str, part_id: str) -> str:
+    return f"Z|{zip_id}|{hub_id}|{part_id}"
+
+
+@dataclass
+class BatchModel:
+    """A compiled pyqubo model for one batch, plus its variable index.
+
+    Reused across every adaptive-penalty iteration of the batch: only the
+    Placeholder feed changes, so the expensive compile happens once.
+    """
+
+    model: Any
+    z_name: dict[tuple[str, str, str], str]
+    y_name: dict[tuple[str, str], str]
+    x_name: dict[str, str]
+    demand_groups: dict[tuple[str, str], list[tuple[str, str]]]
+    c4_note: str
+    express_seconds: float
+    compile_seconds: float
+
+    @property
+    def num_z(self) -> int:
+        return len(self.z_name)
+
+    @property
+    def num_y(self) -> int:
+        return len(self.y_name)
+
+    @property
+    def num_x(self) -> int:
+        return len(self.x_name)
+
+    @property
+    def total_vars(self) -> int:
+        return self.num_z + self.num_y + self.num_x
+
+
+def build_batch_model(batch_df: pd.DataFrame, data: dict[str, Any], args: argparse.Namespace) -> BatchModel:
+    """Formulate one batch natively in pyqubo and compile it."""
+    scalar = data["scalar"]
+    zip_to_hubs = data["zip_to_hubs"]
+
+    lam_c1 = Placeholder(PLACEHOLDER_C1)
+    lam_c2 = Placeholder(PLACEHOLDER_C2)
+    lam_c3 = Placeholder(PLACEHOLDER_C3)
+
+    z_name: dict[tuple[str, str, str], str] = {}
+    y_name: dict[tuple[str, str], str] = {}
+    x_name: dict[str, str] = {}
+    demand_groups: dict[tuple[str, str], list[tuple[str, str]]] = {}
+
+    y_var: dict[tuple[str, str], Any] = {}
+    x_var: dict[str, Any] = {}
+    terms: list[Any] = []
+
+    t_express = time.perf_counter()
+
+    for r in batch_df[["zip_id", "part_id", "b_ik"]].itertuples(index=False):
+        i = str(r.zip_id)
+        k = str(r.part_id)
+        b_val = float(r.b_ik)
+        group_entries: list[tuple[str, str]] = []
+        group_z: list[Any] = []
+
+        for j, dij in zip_to_hubs[i]:
+            zn = var_z(i, j, k)
+            yn = var_y(j, k)
+            xn = var_x(j)
+            z_name[(i, j, k)] = zn
+            y_name[(j, k)] = yn
+            x_name[j] = xn
+
+            z = Binary(zn)
+            y = y_var.get((j, k))
+            if y is None:
+                y = Binary(yn)
+                y_var[(j, k)] = y
+            if j not in x_var:
+                x_var[j] = Binary(xn)
+
+            group_entries.append((j, zn))
+            group_z.append(z)
+
+            # Objective: transport cost of serving (i, k) from j.
+            transport = assignment_cost_by_values(b_val, float(dij), scalar)["assignment_cost"]
+            # C2: Z_ijk <= Y_jk.
+            terms.append(transport * z + lam_c2 * z * (1 - y))
+
+        demand_groups[(i, k)] = group_entries
+        # C1: exactly one hub serves this active (zip, part).
+        terms.append(lam_c1 * (sum(group_z) - 1) ** 2)
+
+    for (j, k), y in y_var.items():
+        # Objective: part cost, plus the transfer charge when j is not an existing hub.
+        stock_cost = float(data["P"].get(k, 0.0)) + (1 - int(data["T"].get(j, 0))) * float(scalar["C"])
+        # C3: Y_jk <= X_j.
+        terms.append(stock_cost * y + lam_c3 * y * (1 - x_var[j]))
+
+    for j, x in x_var.items():
+        # Objective: fixed cost of opening hub j.
+        terms.append(float(scalar["S_lim"]) * x)
+
+    # Tier 3.8: approximate X<=sum(Y) penalty. Pure QUBO can't express OR(Y),
+    # so we add lam_xy on each X-diagonal and refund lam_xy/n_k per (X,Y) pair.
+    # When X=1 with all parts stocked, the refund cancels the bias; with no Y
+    # stocked, the full lam_xy penalizes empty hubs. Default factor is 0.
+    x_empty_factor = float(getattr(args, "x_empty_penalty_factor", 0.0))
+    if x_empty_factor > 0:
+        lam_xy = float(scalar["S_lim"]) * x_empty_factor
+        parts_per_hub: dict[str, list[str]] = defaultdict(list)
+        for (j, k) in y_var:
+            parts_per_hub[j].append(k)
+        for j, x in x_var.items():
+            parts = parts_per_hub.get(j, [])
+            if not parts:
+                continue
+            per_pair_refund = lam_xy / float(len(parts))
+            terms.append(lam_xy * x - per_pair_refund * x * sum(y_var[(j, k)] for k in parts))
+
+    # Tier 3.9: linear S_var-style overflow penalty per stocked Y. This is a
+    # rough proxy because true overflow is max(0, sum(Y) - L), which needs
+    # slack vars to encode in QUBO. Default factor is 0 (off); inactive on
+    # instances_low since L=50000 dwarfs the parts count.
+    y_overflow_factor = float(getattr(args, "y_overflow_penalty_factor", 0.0))
+    if y_overflow_factor > 0:
+        s_var_coeff = float(scalar["S_var"]) * y_overflow_factor
+        for y in y_var.values():
+            terms.append(s_var_coeff * y)
+
+    c4_note = "inactive_or_soft_cost_only"
+    max_stock_per_hub = max((sum(1 for jj, _ in y_name if jj == j) for j in x_name), default=0)
+    if max_stock_per_hub > int(scalar["L"]):
+        c4_note = "capacity_can_bind; QUBO does not hard-encode C4, final cost includes overflow"
+        if args.c4_mode == "on":
+            raise NotImplementedError(
+                "C4 can bind for this batch. This runner does not use the old incorrect equality slack "
+                "encoding. Use --c4-mode auto/off or implement a bounded inequality slack formulation."
+            )
+
+    H = sum(terms)
+    express_seconds = time.perf_counter() - t_express
+
+    t_compile = time.perf_counter()
+    model = H.compile()
+    compile_seconds = time.perf_counter() - t_compile
+
+    del terms, H, y_var, x_var
+    return BatchModel(
+        model=model,
+        z_name=z_name,
+        y_name=y_name,
+        x_name=x_name,
+        demand_groups=demand_groups,
+        c4_note=c4_note,
+        express_seconds=float(express_seconds),
+        compile_seconds=float(compile_seconds),
+    )
+
+
+def qubo_from_model(
+    batch_model: BatchModel, penalties: dict[str, float]
+) -> tuple[dict[tuple[str, str], float], float]:
+    """Feed penalty Placeholders and emit the raw QUBO dict plus its offset.
+
+    The offset is the C1 constant (lam_c1 per active demand row in the batch).
+    Coefficients that cancel to ~0 are dropped so the interaction counts match
+    the hand-rolled construction this replaced.
+    """
+    feed = {
+        PLACEHOLDER_C1: float(penalties["c1"]),
+        PLACEHOLDER_C2: float(penalties["c2"]),
+        PLACEHOLDER_C3: float(penalties["c3"]),
+    }
+    raw_q, offset = batch_model.model.to_qubo(feed_dict=feed)
+    Q = {
+        (str(u), str(v)): float(coeff)
+        for (u, v), coeff in raw_q.items()
+        if abs(float(coeff)) > QUBO_ZERO_TOLERANCE
+    }
+    return Q, float(offset)
+
+
+def build_qubo_for_batch(
+    batch_df: pd.DataFrame,
+    data: dict[str, Any],
+    args: argparse.Namespace,
+    multipliers: dict[str, float] | None = None,
+    batch_model: BatchModel | None = None,
+) -> dict[str, Any]:
+    """Compile (or reuse) the batch model and produce this iteration's QUBO."""
+    bm = batch_model if batch_model is not None else build_batch_model(batch_df, data, args)
+    penalties = penalty_weights(batch_df, data, args, multipliers=multipliers)
+    Q, offset = qubo_from_model(bm, penalties)
+    return {
+        "Q": Q,
+        "offset": float(offset),
+        "batch_model": bm,
+        "z_name": bm.z_name,
+        "y_name": bm.y_name,
+        "x_name": bm.x_name,
+        "demand_groups": bm.demand_groups,
+        "penalties": penalties,
+        "c4_note": bm.c4_note,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Sample evaluation
+# ---------------------------------------------------------------------------
+
+
+def sample_is_one(value: Any) -> bool:
+    try:
+        return int(round(float(value))) == 1
+    except Exception:
+        return bool(value)
+
+
+def evaluate_sample(
+    sample: dict[str, int], energy: float, qubo_meta: dict[str, Any], data: dict[str, Any]
+) -> dict[str, Any]:
+    demand_groups = qubo_meta["demand_groups"]
+    z_name = qubo_meta["z_name"]
+    y_name = qubo_meta["y_name"]
+    x_name = qubo_meta["x_name"]
+
+    c1 = 0
+    for entries in demand_groups.values():
+        selected = sum(1 for _, zn in entries if sample_is_one(sample.get(zn, 0)))
+        if selected != 1:
+            c1 += 1
+
+    c2 = 0
+    for (i, j, k), zn in z_name.items():
+        if sample_is_one(sample.get(zn, 0)) and not sample_is_one(sample.get(y_name[(j, k)], 0)):
+            c2 += 1
+
+    c3 = 0
+    for (j, k), yn in y_name.items():
+        if sample_is_one(sample.get(yn, 0)) and not sample_is_one(sample.get(x_name[j], 0)):
+            c3 += 1
+
+    selected_assignments = sorted(
+        [(i, j, k) for (i, j, k), zn in z_name.items() if sample_is_one(sample.get(zn, 0))]
+    )
+    stocked_pairs = sorted([(j, k) for (j, k), yn in y_name.items() if sample_is_one(sample.get(yn, 0))])
+    open_hubs = sorted([j for j, xn in x_name.items() if sample_is_one(sample.get(xn, 0))])
+    cost = compute_solution_cost(selected_assignments, stocked_pairs, open_hubs, data)["total_cost"]
+
+    return {
+        "sample": sample,
+        "energy": float(energy),
+        "cost": float(cost),
+        "c1": int(c1),
+        "c2": int(c2),
+        "c3": int(c3),
+        "c4": 0,
+        "total_violations": int(c1 + c2 + c3),
+        "assignments": selected_assignments,
+        "stocked_pairs": stocked_pairs,
+        "open_hubs": open_hubs,
+    }
+
+
+def suggested_num_reads(num_z: int, args: argparse.Namespace) -> int:
+    if num_z <= 0:
+        return max(1, int(args.num_reads))
+    scale = max(1.0, math.sqrt(float(num_z) / 5000.0))
+    return max(1, int(math.ceil(float(args.num_reads) * scale)))
+
+
+# ---------------------------------------------------------------------------
+# Result aggregation and post-processing
+# ---------------------------------------------------------------------------
+
+
+def batch_summary_dataframe(results: list[BatchResult]) -> pd.DataFrame:
+    rows = []
+    for r in results:
+        rows.append(
+            {
+                "batch_id": r.batch_id,
+                "num_rows": r.num_rows,
+                "num_parts": r.num_parts,
+                "num_z": r.num_z,
+                "num_y": r.num_y,
+                "num_x": r.num_x,
+                "interactions": r.interactions,
+                "build_seconds": r.build_seconds,
+                "sample_seconds": r.sample_seconds,
+                "eval_seconds": r.eval_seconds,
+                "total_seconds": r.total_seconds,
+                "stage_used": r.stage_used,
+                "suggested_reads": r.suggested_reads,
+                "energy": r.energy,
+                "reconstructed_cost": r.reconstructed_cost,
+                "c1_violations": r.c1_violations,
+                "c2_violations": r.c2_violations,
+                "c3_violations": r.c3_violations,
+                "c4_violations": r.c4_violations,
+                "penalty_c1": r.penalty_c1,
+                "penalty_c2": r.penalty_c2,
+                "penalty_c3": r.penalty_c3,
+                "open_hubs_count": len(r.open_hubs),
+                "stocked_pairs_count": len(r.stocked_pairs),
+                "assignments_count": len(r.assignments),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def batch_adaptive_summary_dataframe(results: list[BatchResult]) -> pd.DataFrame:
+    rows = []
+    for r in results:
+        mult = r.final_penalty_multipliers
+        rows.append(
+            {
+                "batch_id": r.batch_id,
+                "adaptive_iterations_used": int(r.adaptive_iterations_used),
+                "adaptive_was_feasible": bool(r.adaptive_was_feasible),
+                "adaptive_exit_reason": str(r.adaptive_exit_reason),
+                "final_mult_c1": float(mult.get("c1", 1.0)),
+                "final_mult_c2": float(mult.get("c2", 1.0)),
+                "final_mult_c3": float(mult.get("c3", 1.0)),
+                "final_mult_c4": float(mult.get("c4", 1.0)),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def adaptive_iteration_log_dataframe(results: list[BatchResult]) -> pd.DataFrame:
+    """Flatten every batch's per-iteration adaptive log into one DataFrame."""
+    return pd.DataFrame([row for r in results for row in r.adaptive_iteration_log])
+
+
+def aggregate_raw_results(results: list[BatchResult]) -> dict[str, Any]:
+    return {
+        "open_hubs": sorted({hub for r in results for hub in r.open_hubs}),
+        "stocked_pairs": sorted({pair for r in results for pair in r.stocked_pairs}),
+        "assignments": sorted({asg for r in results for asg in r.assignments}),
+    }
+
+
+def incremental_assignment_score(
+    zip_id: str,
+    hub_id: str,
+    part_id: str,
+    data: dict[str, Any],
+    current_open: set[str],
+    current_stocked: set[tuple[str, str]],
+) -> float:
+    scalar = data["scalar"]
+    score = assignment_cost(zip_id, hub_id, part_id, data)["assignment_cost"]
+    if (hub_id, part_id) not in current_stocked:
+        score += float(data["P"].get(part_id, 0.0))
+        score += (1 - int(data["T"].get(hub_id, 0))) * float(scalar["C"])
+    if hub_id not in current_open:
+        score += float(scalar["S_lim"])
+    return float(score)
+
+
+def hub_prune_pass(
+    assignments: list[tuple[str, str, str]],
+    stocked_pairs: list[tuple[str, str]],
+    open_hubs: list[str],
+    data: dict[str, Any],
+    *,
+    max_iterations: int = 10,
+) -> dict[str, Any]:
+    """Tier 1.2: close open hubs whose assignments can be cheaply rerouted.
+
+    For each open hub j (lowest-traffic first), compute the marginal cost of moving
+    each (zip, j, part) assignment to the cheapest already-open alternative within
+    max_service_miles. If S_lim plus j's transport and stocking costs exceed the
+    sum of relocation costs, close j and apply the moves. Iterate until no hub
+    closes in a full pass or max_iterations is hit.
+    """
+    scalar = data["scalar"]
+    s_lim = float(scalar["S_lim"])
+    transfer_C = float(scalar["C"])
+    zip_to_hubs = data["zip_to_hubs"]
+    P_map = data["P"]
+    T_map = data["T"]
+
+    asg = list((str(i), str(j), str(k)) for i, j, k in assignments)
+    stocked: set[tuple[str, str]] = set((str(j), str(k)) for j, k in stocked_pairs)
+    opened: set[str] = set(str(j) for j in open_hubs)
+
+    closures = 0
+    relocations = 0
+
+    for _ in range(max_iterations):
+        hub_assignment_indices: dict[str, list[int]] = defaultdict(list)
+        for idx, (i, j, k) in enumerate(asg):
+            hub_assignment_indices[j].append(idx)
+
+        # Try low-traffic hubs first; they're cheapest to dismantle.
+        candidates = sorted(opened, key=lambda j: len(hub_assignment_indices.get(j, [])))
+        closed_this_round = False
+
+        for j in candidates:
+            indices = hub_assignment_indices.get(j, [])
+
+            # Cost we save by closing j: S_lim + transport at j + stocking at j.
+            transport_at_j = sum(
+                assignment_cost(asg[idx][0], j, asg[idx][2], data)["assignment_cost"]
+                for idx in indices
+            )
+            stocked_at_j = {(jj, k) for jj, k in stocked if jj == j}
+            stocking_at_j = sum(
+                float(P_map.get(k, 0.0)) + (1 - int(T_map.get(j, 0))) * transfer_C
+                for _, k in stocked_at_j
+            )
+            current_cost = s_lim + transport_at_j + stocking_at_j
+
+            # Try to relocate every assignment at j to another already-open hub.
+            relocate_plan: list[tuple[int, str]] = []
+            new_pairs: set[tuple[str, str]] = set()
+            relocate_cost = 0.0
+            feasible = True
+
+            for idx in indices:
+                i, _, k = asg[idx]
+                alternatives = [
+                    (jj, dij) for jj, dij in zip_to_hubs.get(i, [])
+                    if jj != j and jj in opened
+                ]
+                if not alternatives:
+                    feasible = False
+                    break
+
+                best_jj: str | None = None
+                best_marginal = math.inf
+                for jj, _dij in alternatives:
+                    transport = assignment_cost(i, jj, k, data)["assignment_cost"]
+                    stock_pair_exists = (jj, k) in stocked or (jj, k) in new_pairs
+                    stock_marginal = (
+                        0.0 if stock_pair_exists
+                        else float(P_map.get(k, 0.0)) + (1 - int(T_map.get(jj, 0))) * transfer_C
+                    )
+                    total = transport + stock_marginal
+                    if total < best_marginal:
+                        best_marginal = total
+                        best_jj = jj
+
+                if best_jj is None or not math.isfinite(best_marginal):
+                    feasible = False
+                    break
+
+                relocate_plan.append((idx, best_jj))
+                relocate_cost += best_marginal
+                if (best_jj, k) not in stocked:
+                    new_pairs.add((best_jj, k))
+
+            if not feasible:
+                continue
+
+            if relocate_cost < current_cost - 1e-9:
+                # Apply the closure.
+                for idx, new_j in relocate_plan:
+                    i, _, k = asg[idx]
+                    asg[idx] = (i, new_j, k)
+                    stocked.add((new_j, k))
+                stocked = {(jj, k) for jj, k in stocked if jj != j}
+                opened.discard(j)
+                closures += 1
+                relocations += len(relocate_plan)
+                closed_this_round = True
+                break  # restart with refreshed traffic counts
+
+        if not closed_this_round:
+            break
+
+    return {
+        "assignments": sorted(asg),
+        "stocked_pairs": sorted(stocked),
+        "open_hubs": sorted(opened),
+        "closures": int(closures),
+        "relocations": int(relocations),
+    }
+
+
+def postprocess_qubo_solution(
+    raw_assignments: list[tuple[str, str, str]],
+    raw_stocked_pairs: list[tuple[str, str]],
+    raw_open_hubs: list[str],
+    data: dict[str, Any],
+    *,
+    repair_assignments: bool,
+    trim_unused: bool,
+    hub_prune: bool = True,
+    hub_prune_max_iterations: int = 10,
+) -> dict[str, Any]:
+    active = data["active"]
+    zip_to_hubs = data["zip_to_hubs"]
+
+    raw_by_pair: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for i, j, k in raw_assignments:
+        raw_by_pair[(str(i), str(k))].append(str(j))
+
+    current_open = set(str(j) for j in raw_open_hubs)
+    current_stocked = set((str(j), str(k)) for j, k in raw_stocked_pairs)
+
+    final_assignments: list[tuple[str, str, str]] = []
+    assignment_sources: dict[tuple[str, str, str], str] = {}
+    missing_unrepaired = 0
+
+    for r in active[["zip_id", "part_id"]].itertuples(index=False):
+        i = str(r.zip_id)
+        k = str(r.part_id)
+        candidates = zip_to_hubs.get(i, [])
+        candidate_hubs = {j for j, _ in candidates}
+        raw_selected = [j for j in raw_by_pair.get((i, k), []) if j in candidate_hubs]
+
+        chosen: str | None = None
+        source = ""
+        if len(raw_selected) == 1:
+            chosen = raw_selected[0]
+            source = "raw_unique"
+        elif len(raw_selected) > 1:
+            chosen = min(
+                raw_selected,
+                key=lambda j: incremental_assignment_score(i, j, k, data, current_open, current_stocked),
+            )
+            source = "raw_multiple_repaired"
+        elif repair_assignments:
+            if not candidates:
+                missing_unrepaired += 1
+                continue
+            chosen = min(
+                [j for j, _ in candidates],
+                key=lambda j: incremental_assignment_score(i, j, k, data, current_open, current_stocked),
+            )
+            source = "missing_repaired"
+        else:
+            missing_unrepaired += 1
+            continue
+
+        row = (i, chosen, k)
+        final_assignments.append(row)
+        assignment_sources[row] = source
+        current_open.add(chosen)
+        current_stocked.add((chosen, k))
+
+    if trim_unused:
+        final_stocked = sorted({(j, k) for _, j, k in final_assignments})
+        final_open = sorted({j for _, j, _ in final_assignments})
+    else:
+        final_stocked = sorted(current_stocked)
+        final_open = sorted(current_open)
+
+    prune_stats = {"closures": 0, "relocations": 0}
+    if hub_prune:
+        pruned = hub_prune_pass(
+            sorted(final_assignments),
+            final_stocked,
+            final_open,
+            data,
+            max_iterations=int(hub_prune_max_iterations),
+        )
+        # Reassignments from pruning invalidate the recorded source labels for moved rows;
+        # re-tag those rows so the audit CSV stays accurate.
+        new_assignments = pruned["assignments"]
+        original_lookup = {(i, k): j for i, j, k in final_assignments}
+        relocated_sources: dict[tuple[str, str, str], str] = {}
+        for i, j, k in new_assignments:
+            orig_j = original_lookup.get((i, k))
+            if orig_j is not None and orig_j != j:
+                relocated_sources[(i, j, k)] = "hub_prune_relocated"
+            else:
+                relocated_sources[(i, j, k)] = assignment_sources.get((i, orig_j or j, k), "raw_or_solver")
+        assignment_sources = relocated_sources
+        final_assignments = new_assignments
+        final_stocked = pruned["stocked_pairs"]
+        final_open = pruned["open_hubs"]
+        prune_stats = {"closures": pruned["closures"], "relocations": pruned["relocations"]}
+
+    return {
+        "assignments": sorted(final_assignments),
+        "stocked_pairs": final_stocked,
+        "open_hubs": final_open,
+        "assignment_sources": assignment_sources,
+        "missing_unrepaired": int(missing_unrepaired),
+        "hub_prune_stats": prune_stats,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -143,26 +1596,19 @@ def dense_matrix_bytes(num_vars: int) -> int:
     return int(num_vars) * int(num_vars) * VA_DENSE_BYTES_PER_ENTRY
 
 
-def human_bytes(n: int) -> str:
-    x = float(n)
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if x < 1024.0 or unit == "TiB":
-            return f"{x:,.1f} {unit}"
-        x /= 1024.0
-    return f"{x:,.1f} TiB"
-
-
 def build_batch_plan(
     data: dict[str, Any],
-    batches: list[ref.BatchSpec],
+    batches: list[BatchSpec],
     args: argparse.Namespace,
 ) -> list[dict[str, Any]]:
-    """Build every batch's QUBO once to learn its TRUE variable count.
+    """Compile every batch's pyqubo model once to learn its TRUE variable count.
 
-    ref.build_batches caps Z-vars only (--max-z-vars-per-batch); Y and X are
-    whatever the batch's hub/part footprint implies. The VA ceiling applies to
-    len(z_name) + len(y_name) + len(x_name), so it can only be checked after
-    the QUBO is built. Each QUBO is discarded immediately; only counts are kept.
+    build_batches caps Z-vars only (--max-z-vars-per-batch); Y and X are whatever
+    the batch's hub/part footprint implies. The VA ceiling applies to
+    len(z_name) + len(y_name) + len(x_name), so it can only be checked after the
+    model is built. Each model and QUBO is discarded immediately; only counts are
+    kept. Compiling here also means a pyqubo formulation error surfaces during
+    --dry-run, before any VE time is spent.
     """
     plan: list[dict[str, Any]] = []
     active = data["active"]
@@ -170,12 +1616,13 @@ def build_batch_plan(
     for batch in batches:
         batch_df = active.iloc[batch.row_indices].reset_index(drop=True)
         t0 = time.perf_counter()
-        qubo_meta = ref.build_qubo_for_batch(batch_df, data, args)
+        qubo_meta = build_qubo_for_batch(batch_df, data, args)
         build_seconds = time.perf_counter() - t0
+        bm: BatchModel = qubo_meta["batch_model"]
 
-        num_z = len(qubo_meta["z_name"])
-        num_y = len(qubo_meta["y_name"])
-        num_x = len(qubo_meta["x_name"])
+        num_z = bm.num_z
+        num_y = bm.num_y
+        num_x = bm.num_x
         total_vars = num_z + num_y + num_x
         qubo_vars = len({name for key in qubo_meta["Q"] for name in key})
 
@@ -190,17 +1637,20 @@ def build_batch_plan(
                 "total_vars": int(total_vars),
                 "qubo_vars_in_Q": int(qubo_vars),
                 "interactions": int(len(qubo_meta["Q"])),
+                "qubo_offset": float(qubo_meta["offset"]),
                 "dense_matrix_bytes": int(dense_matrix_bytes(total_vars)),
                 "penalty_c1": float(qubo_meta["penalties"]["c1"]),
                 "penalty_c2": float(qubo_meta["penalties"]["c2"]),
                 "penalty_c3": float(qubo_meta["penalties"]["c3"]),
                 "c4_note": str(qubo_meta["c4_note"]),
                 "build_seconds": float(build_seconds),
+                "pyqubo_express_seconds": float(bm.express_seconds),
+                "pyqubo_compile_seconds": float(bm.compile_seconds),
                 "note": str(batch.note),
             }
         )
 
-        del qubo_meta
+        del qubo_meta, bm
         gc.collect()
 
     return plan
@@ -243,6 +1693,19 @@ def print_batch_plan(plan: list[dict[str, Any]], args: argparse.Namespace) -> No
             f"  batches: {len(plan):,} | largest batch: #{worst['batch_id']} at "
             f"{worst['total_vars']:,} vars ({human_bytes(worst['dense_matrix_bytes'])} dense) | "
             f"summed vars across batches: {totals:,}",
+            flush=True,
+        )
+        compile_total = sum(r["pyqubo_compile_seconds"] for r in plan)
+        express_total = sum(r["pyqubo_express_seconds"] for r in plan)
+        print(
+            f"  pyqubo: expression build {express_total:,.2f}s + compile {compile_total:,.2f}s "
+            f"across {len(plan):,} batch(es)",
+            flush=True,
+        )
+        max_offset = max(r["qubo_offset"] for r in plan)
+        print(
+            f"  largest to_qubo offset (the C1 constant): {max_offset:,.2f} "
+            f"({'PASSED to VA' if bool(args.va_include_offset) else 'held out of VA; see --va-include-offset'})",
             flush=True,
         )
         mismatched = [r for r in plan if r["qubo_vars_in_Q"] != r["total_vars"]]
@@ -311,15 +1774,19 @@ def check_ceiling(plan: list[dict[str, Any]], args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 
-def recompute_energy_float64(Q: dict[tuple[str, str], float], spin: dict[str, Any], offset: float = 0.0) -> float:
+def recompute_energy_float64(
+    Q: dict[tuple[str, str], float], spin: dict[str, Any], offset: float = 0.0
+) -> float:
     """Recompute a sample's QUBO energy on the host in double precision.
 
     VA computes in single precision (manual: "VA processes using single
     precision floating point arithmetic"). This is the fp64 reference value.
     math.fsum keeps the summation exact so the reported difference is
-    attributable to VA, not to our accumulation order.
+    attributable to VA, not to our accumulation order. `offset` must be the same
+    constant handed to VectorAnnealing.model(), or the audit compares two
+    different Hamiltonians.
     """
-    on = {name for name, value in spin.items() if ref.sample_is_one(value)}
+    on = {name for name, value in spin.items() if sample_is_one(value)}
     terms = [float(c) for (u, v), c in Q.items() if u in on and v in on]
     return math.fsum(terms) + float(offset)
 
@@ -358,7 +1825,7 @@ def build_one_hot_list(qubo_meta: dict[str, Any]) -> list[list[str]]:
 
     Per the manual, flip-option constraints "must be included in Hamiltonian's
     formulation" -- so this is declared IN ADDITION to the C1 penalty terms,
-    which are left untouched in the QUBO.
+    which the pyqubo expression already carries.
     """
     groups: list[list[str]] = []
     for entries in qubo_meta["demand_groups"].values():
@@ -375,18 +1842,18 @@ def va_sample_once(
     num_reads: int,
     one_hot_list: list[list[str]] | None,
     beta_range: list[float] | None,
+    offset: float,
 ) -> tuple[list[Any], float]:
     """One VectorAnnealing.sample() call. Returns (results, wall seconds).
 
-    offset is 0.0: ref.build_qubo_for_batch omits the C1 constant term, and the
-    OpenJij path likewise samples with no offset. Keeping it at 0 makes VA
-    energies directly comparable to the OpenJij baseline's.
+    `offset` is the constant pyqubo's to_qubo() returned, or 0.0 when
+    --va-include-offset is not set (the default -- see the module docstring).
     """
     model_kwargs: dict[str, Any] = {}
     if one_hot_list:
         model_kwargs["onehot"] = one_hot_list
 
-    va_model = VectorAnnealing.model(Q, 0.0, **model_kwargs)
+    va_model = VectorAnnealing.model(Q, float(offset), **model_kwargs)
     sampler = VectorAnnealing.sampler()
 
     sample_kwargs: dict[str, Any] = {
@@ -418,6 +1885,7 @@ def va_sample_with_retries(
     one_hot_list: list[list[str]] | None,
     beta_range: list[float] | None,
     label: str,
+    offset: float,
 ) -> tuple[list[Any], float, int, int]:
     """Sample until VA returns something usable.
 
@@ -433,7 +1901,9 @@ def va_sample_with_retries(
 
     for attempt in range(1, int(args.va_max_retries) + 2):
         attempts_used = attempt
-        results, elapsed = va_sample_once(VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range)
+        results, elapsed = va_sample_once(
+            VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range, offset
+        )
         seconds += elapsed
 
         if not results:
@@ -465,18 +1935,18 @@ def va_sample_with_retries(
 
 def solve_va_batch(
     VectorAnnealing: Any,
-    batch: ref.BatchSpec,
+    batch: BatchSpec,
     data: dict[str, Any],
     args: argparse.Namespace,
     beta_range: list[float] | None,
-) -> tuple[ref.BatchResult, list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[BatchResult, list[dict[str, Any]], dict[str, Any]]:
     """Solve one batch on VA. Returns (BatchResult, precision rows, va stats).
 
-    Mirrors ref.run_adaptive_penalty_loop when --adaptive-penalty-mode is
-    within-batch: rebuild the QUBO with grown multipliers for whichever
-    constraints are still violated, resample, repeat until feasible or the
-    iteration budget runs out. The seed line is the only thing dropped -- VA has
-    no seed parameter, and the escalation logic never depended on one.
+    With --adaptive-penalty-mode within-batch: re-feed the pyqubo Placeholders
+    with grown multipliers for whichever constraints are still violated,
+    resample, repeat until feasible or the iteration budget runs out. The batch
+    is compiled once; iterations only call to_qubo() again. There is no seed
+    line -- VA has no seed parameter, and the escalation never depended on one.
 
     This matters most with objective scale OFF: C3's penalty starts at
     --min-penalty (50,000) while S_lim is 500,000, so stocking at a closed hub
@@ -501,19 +1971,22 @@ def solve_va_batch(
     growth = float(args.adaptive_penalty_growth)
     stagnation_patience = int(args.adaptive_penalty_stagnation_patience)
 
-    print("  [1/3] Building aligned manual QUBO dictionary (ref.build_qubo_for_batch)...", flush=True)
+    print("  [1/3] Formulating and compiling the PyQUBO model...", flush=True)
     t0 = time.time()
-    qubo_meta = ref.build_qubo_for_batch(batch_df, data, args)
+    batch_model = build_batch_model(batch_df, data, args)
+    qubo_meta = build_qubo_for_batch(batch_df, data, args, batch_model=batch_model)
     build_seconds = time.time() - t0
     Q = qubo_meta["Q"]
-    num_z = len(qubo_meta["z_name"])
-    num_y = len(qubo_meta["y_name"])
-    num_x = len(qubo_meta["x_name"])
-    total_vars = num_z + num_y + num_x
+    offset = float(qubo_meta["offset"])
+    num_z = batch_model.num_z
+    num_y = batch_model.num_y
+    num_x = batch_model.num_x
+    total_vars = batch_model.total_vars
     interactions = len(Q)
     print(
-        f"    built in {build_seconds:.2f}s | Z={num_z:,} Y={num_y:,} X={num_x:,} "
-        f"total_vars={total_vars:,} interactions={interactions:,}",
+        f"    built in {build_seconds:.2f}s "
+        f"(pyqubo expression {batch_model.express_seconds:.2f}s + compile {batch_model.compile_seconds:.2f}s) | "
+        f"Z={num_z:,} Y={num_y:,} X={num_x:,} total_vars={total_vars:,} interactions={interactions:,}",
         flush=True,
     )
     print(
@@ -521,6 +1994,16 @@ def solve_va_batch(
         f"C1={qubo_meta['penalties']['c1']:,.2f} "
         f"C2={qubo_meta['penalties']['c2']:,.2f} "
         f"C3={qubo_meta['penalties']['c3']:,.2f}",
+        flush=True,
+    )
+    va_offset = offset if bool(args.va_include_offset) else 0.0
+    print(
+        f"    to_qubo offset (C1 constant): {offset:,.2f} -> "
+        + (
+            "PASSED to VectorAnnealing.model()"
+            if bool(args.va_include_offset)
+            else "held at 0.0 for VA (fp32 headroom + OpenJij comparability)"
+        ),
         flush=True,
     )
 
@@ -540,7 +2023,7 @@ def solve_va_batch(
             flush=True,
         )
 
-    base_reads = ref.suggested_num_reads(num_z, args)
+    base_reads = suggested_num_reads(num_z, args)
     print(
         f"  [2/3] Sampling with VectorAnnealing | reads={base_reads} "
         f"sweeps={args.num_sweeps} vector_mode={args.va_vector_mode} "
@@ -570,16 +2053,21 @@ def solve_va_batch(
     for iteration in range(1, max_iterations + 1):
         iterations_used = iteration
 
-        # Rebuild the QUBO at this iteration's multipliers. Variable counts are
-        # invariant under multipliers (only coefficients change), so the preflight
-        # ceiling check stays valid across iterations.
+        # Re-feed the Placeholders at this iteration's multipliers. Variable
+        # counts are invariant under the weights (only coefficients change), so
+        # the preflight ceiling check stays valid across iterations, and the
+        # compiled model is reused rather than rebuilt.
         if iteration > 1:
-            t_rebuild = time.time()
-            qubo_meta = ref.build_qubo_for_batch(batch_df, data, args, multipliers=multipliers)
-            build_seconds += time.time() - t_rebuild
+            t_refeed = time.time()
+            qubo_meta = build_qubo_for_batch(
+                batch_df, data, args, multipliers=multipliers, batch_model=batch_model
+            )
+            build_seconds += time.time() - t_refeed
             Q = qubo_meta["Q"]
+            offset = float(qubo_meta["offset"])
+            va_offset = offset if bool(args.va_include_offset) else 0.0
 
-        _, diag = ref.penalty_weights(
+        _, diag = penalty_weights(
             batch_df, data, args, multipliers=multipliers, return_diagnostics=True
         )
         if adaptive:
@@ -588,7 +2076,7 @@ def solve_va_batch(
                 f"multipliers c1={multipliers['c1']:.2f} c2={multipliers['c2']:.2f} "
                 f"c3={multipliers['c3']:.2f} c4={multipliers['c4']:.2f} | "
                 f"penalties C1={diag['c1']['final_value']:,.0f} C2={diag['c2']['final_value']:,.0f} "
-                f"C3={diag['c3']['final_value']:,.0f}",
+                f"C3={diag['c3']['final_value']:,.0f} | offset={offset:,.0f}",
                 flush=True,
             )
 
@@ -596,7 +2084,7 @@ def solve_va_batch(
         for repeat in range(1, int(args.va_repeats) + 1):
             label = f"iter {iteration} repeat {repeat}" if adaptive else f"repeat {repeat}"
             results, seconds, attempts_used, retries = va_sample_with_retries(
-                VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range, label
+                VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range, label, va_offset
             )
             sample_seconds += seconds
             total_sample_calls += attempts_used
@@ -616,7 +2104,7 @@ def solve_va_batch(
                 va_energy = float(getattr(r, "energy", 0.0))
                 constraint_flag = getattr(r, "constraint", None)
 
-                recomputed = recompute_energy_float64(Q, spin, offset=0.0)
+                recomputed = recompute_energy_float64(Q, spin, offset=va_offset)
                 precision_rows.append(
                     {
                         "batch_id": int(batch.batch_id),
@@ -626,6 +2114,8 @@ def solve_va_batch(
                         "recomputed_energy": float(recomputed),
                         "abs_diff": float(abs(va_energy - recomputed)),
                         "rel_diff": float(relative_difference(va_energy, recomputed)),
+                        "qubo_offset": float(offset),
+                        "va_offset_applied": float(va_offset),
                         "constraint_ok": constraint_flag if constraint_flag is None else bool(constraint_flag),
                     }
                 )
@@ -635,9 +2125,9 @@ def solve_va_batch(
                 if constraint_flag is True:
                     constraint_ok_count += 1
 
-                # Identical accounting to ref.solve_qubo_batch: VA's own reported
+                # Identical accounting to the OpenJij path: VA's own reported
                 # energy is fed to evaluate_sample, exactly as OpenJij's is.
-                ev = ref.evaluate_sample(spin, va_energy, qubo_meta, data)
+                ev = evaluate_sample(spin, va_energy, qubo_meta, data)
                 repeat_evals.append(ev)
                 iter_evals.append(ev)
 
@@ -697,9 +2187,9 @@ def solve_va_batch(
             key=lambda e: (e["total_violations"], e["c1"], e["c2"], e["c3"], e["cost"], e["energy"]),
         )
 
-        # ref.adaptive_iteration_log_dataframe's schema. seed_used is None: VA has
-        # no seed parameter, but the column is kept so the CSV matches the
-        # OpenJij path's and both can be concatenated.
+        # The OpenJij adaptive_iteration_log_dataframe schema, so both paths'
+        # logs can be concatenated. seed_used is None: VA has no seed parameter,
+        # but the column is kept so the CSVs line up.
         log_row: dict[str, Any] = {
             "batch_id": int(batch.batch_id),
             "iteration": int(iteration),
@@ -711,6 +2201,7 @@ def solve_va_batch(
             "num_interactions": int(len(Q)),
             "seed_used": None,
             "num_reads": int(base_reads),
+            "qubo_offset": float(offset),
             "exit_reason": "",
         }
         for c in ("c1", "c2", "c3", "c4"):
@@ -776,7 +2267,7 @@ def solve_va_batch(
     total_seconds = time.time() - batch_start
     status = "OK" if best_eval["total_violations"] == 0 else f"{best_eval['total_violations']} structural violations"
     print(
-        f"  [3/3] Batch selected | {status} | aligned cost={ref.money(best_eval['cost'])} | "
+        f"  [3/3] Batch selected | {status} | aligned cost={money(best_eval['cost'])} | "
         f"total_time={total_seconds:.2f}s",
         flush=True,
     )
@@ -787,6 +2278,10 @@ def solve_va_batch(
         "batch_id": int(batch.batch_id),
         "total_vars": int(total_vars),
         "dense_matrix_bytes": int(dense_matrix_bytes(total_vars)),
+        "pyqubo_express_seconds": float(batch_model.express_seconds),
+        "pyqubo_compile_seconds": float(batch_model.compile_seconds),
+        "qubo_offset": float(offset),
+        "va_offset_applied": float(va_offset),
         "va_repeats": int(args.va_repeats),
         "va_sample_calls": int(total_sample_calls),
         "va_constraint_retries": int(total_retries),
@@ -816,7 +2311,7 @@ def solve_va_batch(
         "repeat_records": repeat_records,
     }
 
-    result = ref.BatchResult(
+    result = BatchResult(
         batch_id=batch.batch_id,
         num_rows=num_rows,
         num_parts=num_parts,
@@ -851,7 +2346,7 @@ def solve_va_batch(
         adaptive_exit_reason=str(exit_reason),
     )
 
-    del Q, qubo_meta
+    del Q, qubo_meta, batch_model
     gc.collect()
     return result, precision_rows, va_stats
 
@@ -862,10 +2357,10 @@ def solve_va_batch(
 
 
 def va_batch_summary_dataframe(
-    results: list[ref.BatchResult], va_stats: list[dict[str, Any]]
+    results: list[BatchResult], va_stats: list[dict[str, Any]]
 ) -> pd.DataFrame:
-    """ref.batch_summary_dataframe's columns plus the VA-specific ones."""
-    base = ref.batch_summary_dataframe(results)
+    """batch_summary_dataframe's columns plus the VA-specific ones."""
+    base = batch_summary_dataframe(results)
     extra = pd.DataFrame(
         [{k: v for k, v in s.items() if k != "repeat_records"} for s in va_stats]
     )
@@ -920,11 +2415,11 @@ def print_precision_report(precision_rows: list[dict[str, Any]]) -> dict[str, An
 
 
 def print_va_header(
-    data: dict[str, Any], batches: list[ref.BatchSpec], args: argparse.Namespace, run_dir: Path
+    data: dict[str, Any], batches: list[BatchSpec], args: argparse.Namespace, run_dir: Path
 ) -> None:
     avg_hubs = sum(len(v) for v in data["zip_to_hubs"].values()) / max(1, len(data["zip_to_hubs"]))
     print("\n" + "=" * 76, flush=True)
-    print("VA QUBO MODEL - ALIGNED COST BASIS (identical QUBO to the OpenJij path)", flush=True)
+    print("VA QUBO MODEL - ALIGNED COST BASIS (PyQUBO formulation)", flush=True)
     print("=" * 76, flush=True)
     print(f"  dataset:                  {data['dataset_name']}", flush=True)
     print(f"  active demand pairs:      {len(data['active']):,}", flush=True)
@@ -938,6 +2433,12 @@ def print_va_header(
     print(f"  total QUBO batches:       {len(batches):,}", flush=True)
     print(f"  max Z vars/batch:         {args.max_z_vars_per_batch:,}", flush=True)
     print(f"  VA max total vars/batch:  {args.va_max_vars_per_batch:,}", flush=True)
+    print(f"  formulation:              pyqubo Binary + Placeholder -> compile().to_qubo()", flush=True)
+    print(
+        f"  to_qubo offset:           "
+        f"{'passed to VectorAnnealing.model()' if args.va_include_offset else 'held out of VA (default); recorded in the CSVs'}",
+        flush=True,
+    )
     print(f"  sampler:                  NEC Vector Annealing", flush=True)
     print(f"    vector_mode:            {args.va_vector_mode}", flush=True)
     print(f"    num_reads (base):       {args.num_reads}", flush=True)
@@ -989,7 +2490,7 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     tracemalloc.start()
     start = time.perf_counter()
 
-    data = ref.load_problem_data(
+    data = load_problem_data(
         args.dataset_dir,
         max_service_miles_override=args.max_service_miles,
         penalty_start_miles_override=args.penalty_start_miles,
@@ -998,7 +2499,7 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     )
 
     run_dir = Path(args.run_root).expanduser().resolve() / "va"
-    batches = ref.build_batches(
+    batches = build_batches(
         data["active"],
         data["part_order"],
         data["zip_to_hubs"],
@@ -1010,9 +2511,9 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
         run_dir.mkdir(parents=True, exist_ok=True)
     print_va_header(data, batches, args, run_dir)
 
-    # Preflight: build every QUBO, learn the TRUE variable counts, check the
-    # ceiling. Nothing is sampled and VectorAnnealing is not imported yet.
-    print("\nPreflight: building every batch QUBO to measure true variable counts...", flush=True)
+    # Preflight: compile every batch model, learn the TRUE variable counts, check
+    # the ceiling. Nothing is sampled and VectorAnnealing is not imported yet.
+    print("\nPreflight: compiling every batch QUBO to measure true variable counts...", flush=True)
     plan = build_batch_plan(data, batches, args)
     print_batch_plan(plan, args)
     check_ceiling(plan, args)
@@ -1035,7 +2536,7 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     if args.qubo_time_limit is not None and float(args.qubo_time_limit) > 0:
         deadline = time.perf_counter() + float(args.qubo_time_limit)
 
-    results: list[ref.BatchResult] = []
+    results: list[BatchResult] = []
     all_precision_rows: list[dict[str, Any]] = []
     all_va_stats: list[dict[str, Any]] = []
     stopped_time_limit = False
@@ -1057,22 +2558,22 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
         all_precision_rows.extend(precision_rows)
         all_va_stats.append(va_stats)
 
-        # Same checkpoint filenames run_qubo_solver writes.
-        checkpoint_raw = ref.aggregate_raw_results(results)
+        # Same checkpoint filenames the OpenJij runner writes.
+        checkpoint_raw = aggregate_raw_results(results)
         pd.DataFrame(checkpoint_raw["assignments"], columns=["zip_id", "hub_id", "part_id"]).to_csv(
             run_dir / "checkpoint_raw_assignments.csv", index=False
         )
         pd.DataFrame({"hub_id": checkpoint_raw["open_hubs"]}).to_csv(
             run_dir / "checkpoint_raw_open_hubs.csv", index=False
         )
-        ref.batch_summary_dataframe(results).to_csv(run_dir / "batch_summary_checkpoint.csv", index=False)
+        batch_summary_dataframe(results).to_csv(run_dir / "batch_summary_checkpoint.csv", index=False)
         pd.DataFrame(all_precision_rows).to_csv(run_dir / "va_precision_audit.csv", index=False)
 
     if not results:
         raise RuntimeError("No VA batches completed; increase --qubo-time-limit or check the instance")
 
-    raw = ref.aggregate_raw_results(results)
-    final = ref.postprocess_qubo_solution(
+    raw = aggregate_raw_results(results)
+    final = postprocess_qubo_solution(
         raw["assignments"],
         raw["stocked_pairs"],
         raw["open_hubs"],
@@ -1084,22 +2585,22 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     )
 
     # Shared schema for the comparison tooling, plus the VA-augmented variant.
-    ref.batch_summary_dataframe(results).to_csv(run_dir / "batch_summary.csv", index=False)
+    batch_summary_dataframe(results).to_csv(run_dir / "batch_summary.csv", index=False)
     va_batch_summary_dataframe(results, all_va_stats).to_csv(run_dir / "va_batch_summary.csv", index=False)
     va_repeat_dataframe(all_va_stats).to_csv(run_dir / "va_repeat_summary.csv", index=False)
 
-    # Same filenames and schemas run_qubo_solver emits in within-batch mode, so the
-    # VA and OpenJij adaptive logs can be concatenated and compared directly.
+    # Same filenames and schemas the OpenJij runner emits in within-batch mode, so
+    # the VA and OpenJij adaptive logs can be concatenated and compared directly.
     if args.adaptive_penalty_mode == "within-batch":
-        ref.batch_adaptive_summary_dataframe(results).to_csv(
+        batch_adaptive_summary_dataframe(results).to_csv(
             run_dir / "batch_adaptive_summary.csv", index=False
         )
-        ref.adaptive_iteration_log_dataframe(results).to_csv(
+        adaptive_iteration_log_dataframe(results).to_csv(
             run_dir / "adaptive_iteration_log.csv", index=False
         )
     pd.DataFrame(all_precision_rows).to_csv(run_dir / "va_precision_audit.csv", index=False)
 
-    ref.assignment_rows_dataframe(raw["assignments"], data).to_csv(
+    assignment_rows_dataframe(raw["assignments"], data).to_csv(
         run_dir / "raw_qubo_hub_zip_part_pairings.csv", index=False
     )
     pd.DataFrame({"hub_id": raw["open_hubs"]}).to_csv(run_dir / "raw_qubo_open_hubs.csv", index=False)
@@ -1108,7 +2609,7 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     )
 
     wall = time.perf_counter() - start
-    peak_mb, current_mb = ref.memory_report_mb()
+    peak_mb, current_mb = memory_report_mb()
     runtime = {
         "wall_seconds": float(wall),
         "qubo_build_seconds": float(sum(r.build_seconds for r in results)),
@@ -1121,8 +2622,8 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
 
     precision_summary = print_precision_report(all_precision_rows)
 
-    raw_cost = ref.compute_solution_cost(raw["assignments"], raw["stocked_pairs"], raw["open_hubs"], data)
-    raw_audit = ref.global_audit(raw["assignments"], raw["stocked_pairs"], raw["open_hubs"], data)
+    raw_cost = compute_solution_cost(raw["assignments"], raw["stocked_pairs"], raw["open_hubs"], data)
+    raw_audit = global_audit(raw["assignments"], raw["stocked_pairs"], raw["open_hubs"], data)
     extra = {
         "completed_batches": int(len(results)),
         "total_batches": int(len(batches)),
@@ -1142,6 +2643,22 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
             "hub_prune_enabled": bool(not args.no_hub_prune),
             "hub_prune_closures": int(final.get("hub_prune_stats", {}).get("closures", 0)),
             "hub_prune_relocations": int(final.get("hub_prune_stats", {}).get("relocations", 0)),
+        },
+        "formulation": {
+            "library": "pyqubo",
+            "method": "Binary/Placeholder expressions -> compile() -> to_qubo(feed_dict=...)",
+            "penalty_placeholders": [PLACEHOLDER_C1, PLACEHOLDER_C2, PLACEHOLDER_C3],
+            "compile_once_per_batch": True,
+            "zero_coefficient_tolerance": float(QUBO_ZERO_TOLERANCE),
+            "c4_encoding": "not hard-encoded in the QUBO; priced in the final cost as overflow",
+            "offset_passed_to_va": bool(args.va_include_offset),
+            "offset_note": (
+                "to_qubo()'s offset is the C1 constant (lam_c1 per active demand row). "
+                "Add it to a reported energy to recover the true Hamiltonian value."
+            ),
+            "max_batch_offset": float(max(p["qubo_offset"] for p in plan)),
+            "total_express_seconds": float(sum(p["pyqubo_express_seconds"] for p in plan)),
+            "total_compile_seconds": float(sum(p["pyqubo_compile_seconds"] for p in plan)),
         },
         "va": {
             "engine": "NEC Vector Annealing",
@@ -1194,7 +2711,7 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
         "precision_audit": precision_summary,
     }
 
-    summary = ref.write_solution_outputs(
+    summary = write_solution_outputs(
         run_dir,
         solver_name="va",
         data=data,
@@ -1205,7 +2722,7 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
         extra=extra,
         assignment_sources=final.get("assignment_sources", {}),
     )
-    print(ref.final_results_block(summary, "VA FINAL RESULTS"), flush=True)
+    print(final_results_block(summary, "VA FINAL RESULTS"), flush=True)
 
     # Repeat the precision headline last so it is the final thing on screen.
     if precision_summary.get("max_abs_rel_diff") is not None:
@@ -1226,7 +2743,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # --- Mirrored from run_aligned_fsl_comparison.parse_args ---------------
+    # --- Model / dataset ---------------------------------------------------
     p.add_argument("--dataset-dir", default="instances_low",
                    help="Folder with demand/distances/hubs/parameters/parts/zips CSV files.")
     p.add_argument("--run-root", default="",
@@ -1242,9 +2759,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     p.add_argument("--part-batch-size", type=int, default=1000, help="Soft part count per batch.")
     p.add_argument("--max-z-vars-per-batch", type=int, default=50000,
-                   help="Hard Z-variable cap used by ref.build_batches. Caps Z only, not Y or X.")
+                   help="Hard Z-variable cap used by build_batches. Caps Z only, not Y or X.")
     p.add_argument("--num-reads", type=int, default=100,
-                   help="Base reads; scaled per batch by ref.suggested_num_reads, then passed as VA num_reads.")
+                   help="Base reads; scaled per batch by suggested_num_reads, then passed as VA num_reads.")
     p.add_argument("--num-sweeps", type=int, default=3000, help="VA num_sweeps (VA default is 500).")
     p.add_argument("--penalty-mode", choices=["fixed", "adaptive"], default="adaptive")
     p.add_argument("--min-penalty", type=float, default=50000.0,
@@ -1253,7 +2770,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--constraint-multiplier", type=float, default=5.0,
                    help="Only takes effect with --enable-objective-scale; otherwise ignored.")
     p.add_argument("--enable-objective-scale", action="store_true",
-                   help="Re-enable ref's objective-scale normalization, which lifts penalties to "
+                   help="Re-enable objective-scale normalization, which lifts penalties to "
                         "~scale*multiplier (~2.51M on instances_low). OFF by default on the VA path, "
                         "so penalties sit flat at --min-penalty (50,000). Matches the arm that "
                         "run_aligned_fsl_comparison_noscale.py produces.")
@@ -1262,9 +2779,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.add_argument(f"--constraint-multiplier-{c}", type=float, default=-1.0)
     p.add_argument("--c4-mode", choices=["off", "auto", "on"], default="auto")
     p.add_argument("--x-empty-penalty-factor", type=float, default=0.0,
-                   help="Mirrored QUBO-formulation flag. Default 0 (disabled).")
+                   help="QUBO-formulation flag: penalize open-but-empty hubs. Default 0 (disabled).")
     p.add_argument("--y-overflow-penalty-factor", type=float, default=0.0,
-                   help="Mirrored QUBO-formulation flag. Default 0 (disabled).")
+                   help="QUBO-formulation flag: linear S_var proxy per stocked Y. Default 0 (disabled).")
     p.add_argument("--qubo-time-limit", type=float, default=5400.0,
                    help="Wall time budget in seconds, checked between batches. 0 disables.")
     p.add_argument("--no-repair-assignments", action="store_true",
@@ -1277,8 +2794,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         "scale OFF, C3 starts at 50,000 against an S_lim of 500,000 and only the "
                         "escalation fixes that. 'off' gives a single static pass.")
     p.add_argument("--adaptive-penalty-iterations", type=int, default=8,
-                   help="Max adaptive iterations per batch. Default 8, not ref's 5: escalating C3 past "
-                        "S_lim needs ceil(log(500000/50000)/log(1.5)) = 6 iterations at growth 1.5.")
+                   help="Max adaptive iterations per batch. Default 8, not the OpenJij path's 5: "
+                        "escalating C3 past S_lim needs ceil(log(500000/50000)/log(1.5)) = 6 "
+                        "iterations at growth 1.5.")
     p.add_argument("--adaptive-penalty-growth", type=float, default=1.5,
                    help="Multiplicative growth for violated constraint penalties.")
     p.add_argument("--adaptive-penalty-stagnation-patience", type=int, default=0,
@@ -1301,13 +2819,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="VA vector_mode.")
     va.add_argument("--va-beta-range", default="",
                     help="VA beta_range as 'start,end[,nsteps]'. Empty uses the VA default [10,100,200].")
+    va.add_argument("--va-include-offset", action="store_true",
+                    help="Pass pyqubo's to_qubo() offset (the C1 constant) to VectorAnnealing.model() "
+                         "as the Hamiltonian constant. OFF by default: the offset runs to ~2.5e8 on "
+                         "instances_low, which would cost ~5 significant digits of VA's fp32 energy "
+                         "resolution and break energy comparability with the OpenJij arm. The offset "
+                         "is recorded in the CSVs and summary.json either way.")
     va.add_argument("--dry-run", action="store_true",
-                    help="Load data, build batches and QUBOs, print the plan, check the ceiling, exit. "
-                         "Does not import VectorAnnealing; runs on any machine.")
+                    help="Load data, build batches, compile every QUBO, print the plan, check the "
+                         "ceiling, exit. Does not import VectorAnnealing; runs on any machine.")
 
     args = p.parse_args(argv)
 
-    # ref.penalty_weights reads `disable_objective_scale` via getattr. The VA path
+    # penalty_weights reads `disable_objective_scale` via getattr. The VA path
     # defaults to objective scale OFF, so penalties equal --min-penalty flat rather
     # than being lifted into the millions. See the module docstring for why.
     args.disable_objective_scale = not bool(args.enable_objective_scale)
@@ -1317,7 +2841,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if int(args.va_max_retries) < 0:
         p.error("--va-max-retries must be >= 0")
     if not args.run_root:
-        args.run_root = str(Path("outputs") / f"va_fsl_{ref.now_stamp()}")
+        args.run_root = str(Path("outputs") / f"va_fsl_{now_stamp()}")
 
     return args
 
@@ -1330,7 +2854,7 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit:
         raise
     except Exception as exc:
-        peak_mb, current_mb = ref.memory_report_mb()
+        peak_mb, current_mb = memory_report_mb()
         print("ERROR: VA run failed.", file=sys.stderr)
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         print(f"peak/current memory before exit: {peak_mb:,.1f}/{current_mb:,.1f} MB", file=sys.stderr)
