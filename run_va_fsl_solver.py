@@ -2457,6 +2457,18 @@ def solve_va_batch(
 
     all_energies = [float(row["va_reported_energy"]) for row in precision_rows]
     all_rel = [row["rel_diff"] for row in precision_rows if math.isfinite(row["rel_diff"])]
+    # Density of the QUBO as last sampled (adaptive iterations change coefficients,
+    # which can zero terms out, so this is measured on the final Q rather than the first).
+    final_density = qubo_density_stats(Q, total_vars)
+    print(
+        f"    matrix: density={final_density['matrix_density']:.6%} "
+        f"({int(final_density['nonzero_cells']):,} non-zero of {int(final_density['total_cells']):,} cells) | "
+        f"avg couplings/var={final_density['avg_couplings_per_var']:.1f} | "
+        f"VA dense alloc {human_bytes(int(final_density['dense_matrix_bytes']))} vs "
+        f"sparse {human_bytes(int(final_density['sparse_equivalent_bytes']))} "
+        f"({final_density['dense_waste_factor']:,.0f}x)",
+        flush=True,
+    )
     va_stats = {
         "batch_id": int(batch.batch_id),
         "total_vars": int(total_vars),
