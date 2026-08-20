@@ -141,6 +141,12 @@ VA_HARD_MAX_VARS = 100_000          # "Binary data size: up to 100 thousand bit"
 VA_DENSE_BYTES_PER_ENTRY = 4        # 32-bit resolution, dense full-connection matrix
 VA_MANUAL_REF = "NEC Vector Annealing PoC Manual, 2nd Edition (Nov 2022)"
 
+# Where on-prem VA installs live. Used ONLY to build actionable error text and
+# to report which install was picked up -- never to import anything implicitly.
+VA_CANDIDATE_GLOB = "/opt/va/*/libexec/VectorAnnealing/python"
+# The physical VE cards appear as these device nodes on the executing host.
+VE_DEVICE_GLOBS = ("/dev/veslot*", "/dev/ve[0-9]*")
+
 # Coefficients at or below this magnitude are dropped from the compiled QUBO.
 # The hand-rolled construction this replaced applied the same tolerance when
 # accumulating terms, so pruning keeps the interaction counts in batch_summary.csv
