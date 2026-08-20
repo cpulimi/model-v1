@@ -73,12 +73,34 @@ directories, using the same filenames and column schemas the OpenJij runner
 writes, so run_aligned_fsl_comparison.build_combined_outputs and the existing
 comparison tooling can read it unchanged.
 
-Environment (per NEC Vector Annealing PoC Manual, 2nd Edition, Nov 2022):
-    Python 3.8, numpy >= 1.22.3, pyqubo >= 1.0.13, pandas, and
-    export PYTHONPATH=/opt/va/VApoc_0201/libexec/VectorAnnealing/python:${PYTHONPATH}
-That manual documents the 2022 PoC release; the version installed on this
-cluster may differ. The VA module version is printed at startup when it
-exposes one.
+EXECUTION MODEL: LOCAL VE CARD ONLY
+-----------------------------------
+pyqubo is the modeling layer; the locally installed `VectorAnnealing` module is
+the hardware execution layer, driving the physical NEC Vector Engine card in the
+node this process runs on. This is exactly the pattern the PoC manual documents:
+
+    qubo, offset = model.to_qubo(feed_dict={...})   # pyqubo
+    import VectorAnnealing                          # local on-prem module
+    va_model = VectorAnnealing.model(qubo, offset)
+    result = VectorAnnealing.sampler().sample(va_model, num_reads=...)
+
+No cloud or service-client path exists anywhere in this file: there is no
+SACServiceClient, no REST/HTTP call, no endpoint, no credential. The solver
+imports the on-disk module and talks to the card through it. `import_vector_
+annealing()` reports the resolved module path and the visible /dev/ve* devices
+at startup so each run's log proves it executed on local hardware.
+
+On ASU SOL that card lives on node `sfpga01n`; see va_solve.sh, which pins
+`#SBATCH -w sfpga01n`. Run va_probe.py there first to confirm the install.
+
+Environment:
+    Python 3.8+, numpy >= 1.22.3, pyqubo >= 1.0.13, pandas, and the VA python
+    directory on PYTHONPATH, e.g.
+        export PYTHONPATH=/opt/va/V3.0.0/libexec/VectorAnnealing/python:${PYTHONPATH}
+    The 2022 PoC manual documents release VApoc_0201; SOL carries V3.0.0, so
+    the path differs per install. VA_CANDIDATE_GLOB below is used only to build
+    a helpful error message -- it never changes what gets imported. The VA
+    module version is printed at startup when it exposes one.
 """
 
 from __future__ import annotations
