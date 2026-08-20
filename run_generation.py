@@ -86,14 +86,25 @@ def extract_notebook_source(nb_path: Path) -> tuple[str, int, int]:
 
 
 def load_notebook_namespace(nb_path: Path) -> dict[str, Any]:
-    """Exec the notebook's code cells and hand back the resulting namespace."""
+    """Exec the notebook's code cells and hand back the resulting namespace.
+
+    The cells are executed inside a real module registered in sys.modules:
+    @dataclass resolves field types via sys.modules[cls.__module__], so a bare
+    dict namespace makes GeneratorConfig/ModelParams fail to build.
+    """
     source, included, skipped = extract_notebook_source(nb_path)
-    namespace: dict[str, Any] = {"__name__": "_notebook_", "__file__": str(nb_path)}
-    code = compile(source, f"<{nb_path.name}>", "exec")
-    exec(code, namespace)  # noqa: S102 - executing the user's own notebook, by design
+    module = types.ModuleType(NOTEBOOK_MODULE_NAME)
+    module.__file__ = str(nb_path)
+    sys.modules[NOTEBOOK_MODULE_NAME] = module
+    try:
+        code = compile(source, f"<{nb_path.name}>", "exec")
+        exec(code, module.__dict__)  # noqa: S102 - the user's own notebook, by design
+    except Exception:
+        sys.modules.pop(NOTEBOOK_MODULE_NAME, None)
+        raise
     print(f"  loaded {included} code cell(s) from {nb_path.name} "
           f"({skipped} execution cell(s) skipped)")
-    return namespace
+    return module.__dict__
 
 
 def resolve_default_anchor_file(namespace: dict[str, Any], project_root: Path) -> Path:
