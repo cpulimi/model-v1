@@ -1802,6 +1802,7 @@ def build_batch_plan(
         num_x = bm.num_x
         total_vars = num_z + num_y + num_x
         qubo_vars = len({name for key in qubo_meta["Q"] for name in key})
+        density = qubo_density_stats(qubo_meta["Q"], total_vars)
 
         plan.append(
             {
