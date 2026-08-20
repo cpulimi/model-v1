@@ -296,19 +296,41 @@ def peak_or_current_rss_mb() -> float:
 
 
 def memory_report_mb() -> tuple[float, float]:
-    current_mb = 0.0
-    peak_mb = 0.0
+    """(peak_mb, current_mb). Peak is the true process high-water mark.
+
+    tracemalloc only sees Python allocations, so it misses numpy/pandas buffers
+    and anything the VA extension allocates; RSS covers all of it. The peak
+    therefore takes the max of the two, and current stays current.
+    """
+    tracemalloc_current_mb = 0.0
+    tracemalloc_peak_mb = 0.0
     try:
         current, peak = tracemalloc.get_traced_memory()
-        current_mb = current / (1024.0 * 1024.0)
-        peak_mb = peak / (1024.0 * 1024.0)
+        tracemalloc_current_mb = current / (1024.0 * 1024.0)
+        tracemalloc_peak_mb = peak / (1024.0 * 1024.0)
     except Exception:
         pass
 
-    rss = peak_or_current_rss_mb()
-    current_mb = max(current_mb, rss)
-    peak_mb = max(peak_mb, current_mb)
+    current_mb = max(tracemalloc_current_mb, current_rss_mb())
+    peak_mb = max(tracemalloc_peak_mb, peak_rss_mb(), current_mb)
     return peak_mb, current_mb
+
+
+def memory_breakdown_mb() -> dict[str, float]:
+    """Every memory figure separately, so a run can be diagnosed after the fact."""
+    tm_current = tm_peak = 0.0
+    try:
+        current, peak = tracemalloc.get_traced_memory()
+        tm_current = current / (1024.0 * 1024.0)
+        tm_peak = peak / (1024.0 * 1024.0)
+    except Exception:
+        pass
+    return {
+        "rss_current_mb": float(current_rss_mb()),
+        "rss_peak_mb": float(peak_rss_mb()),
+        "tracemalloc_current_mb": float(tm_current),
+        "tracemalloc_peak_mb": float(tm_peak),
+    }
 
 
 def human_bytes(n: int) -> str:
