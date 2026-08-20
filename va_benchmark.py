@@ -384,6 +384,140 @@ def print_report(rows: list[dict[str, Any]], mode: str) -> None:
     print("=" * 104)
 
 
+def fit_growth_exponent(x: list[float], y: list[float]) -> float:
+    """Slope of log(y) vs log(x), i.e. k in y ~ x^k.
+
+    k tells you the growth class directly: 1.0 doubles when hubs double, 2.0
+    quadruples. Fitted rather than eyeballed so the classification is not a
+    judgement call.
+    """
+    pts = [(math.log(a), math.log(b)) for a, b in zip(x, y)
+           if a and b and a > 0 and b > 0 and a == a and b == b]
+    if len(pts) < 2:
+        return float("nan")
+    n = len(pts)
+    sx = sum(p[0] for p in pts)
+    sy = sum(p[1] for p in pts)
+    sxx = sum(p[0] * p[0] for p in pts)
+    sxy = sum(p[0] * p[1] for p in pts)
+    denom = n * sxx - sx * sx
+    return (n * sxy - sx * sy) / denom if denom else float("nan")
+
+
+def classify_growth(k: float) -> tuple[str, str]:
+    """(label, plain-English meaning) for a growth exponent."""
+    if k != k:
+        return "n/a", "not enough data points"
+    if k < -0.3:
+        return "SHRINKING", f"falls as size grows (~1/n^{abs(k):.1f})"
+    if k < 0.3:
+        return "FLAT", "roughly constant regardless of size"
+    if k < 0.75:
+        return "SUB-LINEAR", "grows slower than the hub count"
+    if k < 1.3:
+        return "LINEAR", "doubles when hubs double"
+    if k < 1.7:
+        return "SUPER-LINEAR", "grows faster than hubs, cheaper than squared"
+    if k < 2.3:
+        return "QUADRATIC", "quadruples when hubs double"
+    return "WORSE THAN QUADRATIC", "grows explosively; this will bind first"
+
+
+def sparkbar(values: list[float], width: int = 22) -> str:
+    """A tiny proportional bar so the shape is visible without reading digits."""
+    vals = [v for v in values if v == v]
+    if not vals or max(vals) <= 0:
+        return ""
+    top = max(vals)
+    return "".join("#" * max(1, int(round(width * (v / top)))) if v == v else "" for v in values[:1])
+
+
+def print_trend_analysis(rows: list[dict[str, Any]], mode: str) -> None:
+    """Turn the recorded numbers into growth laws, per-unit rates and projections."""
+    ok = [r for r in rows if r.get("status") == "OK" and r.get("hubs")]
+    if len(ok) < 2:
+        return
+    hubs = [float(r["hubs"]) for r in ok]
+
+    print("\n" + "=" * 104)
+    print("TREND ANALYSIS")
+    print("=" * 104)
+    print("  Growth exponent k fits metric ~ hubs^k across the suite.")
+    print("  k=1 linear (doubles when hubs double) | k=2 quadratic (quadruples) | k<0 shrinking.\n")
+
+    metrics = [
+        ("demand_rows", "demand rows", ",.0f"),
+        ("binary_vars", "binary variables", ",.0f"),
+        ("interactions", "QUBO interactions", ",.0f"),
+        ("matrix_density", "matrix density", ".5%"),
+        ("couplings_per_var", "couplings per variable", ".2f"),
+        ("dense_bytes", "VA dense matrix", ",.0f"),
+        ("construction_seconds", "QUBO construction time", ",.2f"),
+        ("annealing_seconds", "annealing time", ",.2f"),
+        ("total_wall_seconds", "total runtime", ",.2f"),
+        ("rss_peak_mb", "peak RSS", ",.1f"),
+        ("raw_structural_violations", "raw violations", ",.0f"),
+        ("raw_cost", "raw cost", ",.0f"),
+    ]
+
+    h = f"  {'metric':<24} {'first':>14} {'last':>14} {'growth':>9} {'k':>6}  {'class':<20} meaning"
+    print(h)
+    print("  " + "-" * (len(h) + 22))
+    for key, label, fmt in metrics:
+        ys = [float(r.get(key)) if r.get(key) is not None else float("nan") for r in ok]
+        ys = [y if y == y else float("nan") for y in ys]
+        usable = [y for y in ys if y == y]
+        if len(usable) < 2:
+            continue
+        k = fit_growth_exponent(hubs, ys)
+        label_txt, meaning = classify_growth(k)
+        first, last = usable[0], usable[-1]
+        growth = (last / first) if first else float("nan")
+        print(f"  {label:<24} {_n(first, fmt):>14} {_n(last, fmt):>14} "
+              f"{_n(growth, ',.1f') + 'x':>9} {_n(k, '+.2f'):>6}  {label_txt:<20} {meaning}")
+
+    # Per-unit rates: these should stay roughly flat if scaling is healthy.
+    print("\n  PER-UNIT RATES  (flat down a column = clean scaling)")
+    h2 = (f"  {'instance':<14} {'vars/hub':>10} {'interact/var':>13} {'build ms/1k vars':>17} "
+          f"{'RSS MB/1k vars':>15} {'VA dense MB/var':>16}")
+    print(h2)
+    print("  " + "-" * (len(h2) - 2))
+    for r in ok:
+        v = float(r.get("binary_vars") or 0)
+        cs = r.get("construction_seconds")
+        print(f"  {r['instance']:<14} {_n(v / float(r['hubs']), ',.1f'):>10} "
+              f"{_n(float(r.get('interactions') or 0) / v if v else BLANK, ',.2f'):>13} "
+              f"{_n((float(cs) * 1000.0 / (v / 1000.0)) if (cs and v) else BLANK, ',.1f'):>17} "
+              f"{_n(float(r.get('rss_peak_mb') or 0) / (v / 1000.0) if v else BLANK, ',.1f'):>15} "
+              f"{_n(float(r.get('dense_bytes') or 0) / 1048576.0 / v if v else BLANK, ',.3f'):>16}")
+
+    # Projection to the VA ceilings, using the fitted laws.
+    var_k = fit_growth_exponent(hubs, [float(r["binary_vars"]) for r in ok])
+    base_hub, base_vars = hubs[0], float(ok[0]["binary_vars"])
+    print("\n  PROJECTION  (extrapolating binary variables ~ hubs^%.2f)" % var_k)
+    h3 = (f"  {'hubs':>6} {'binary_vars':>13} {'VA dense':>12} {'vs 60k ceiling':>16} "
+          f"{'vs 100k hard max':>18}")
+    print(h3)
+    print("  " + "-" * (len(h3) - 2))
+    for target in (100, 150, 200, 250, 300):
+        proj = base_vars * (target / base_hub) ** var_k
+        dense = solver.dense_matrix_bytes(int(proj))
+        c1 = "FITS" if proj <= 60000 else f"OVER by {proj - 60000:,.0f}"
+        c2 = "FITS" if proj <= 100000 else f"OVER by {proj - 100000:,.0f}"
+        print(f"  {target:>6,} {proj:>13,.0f} {solver.human_bytes(dense):>12} {c1:>16} {c2:>18}")
+
+    # The one-paragraph read.
+    dense_k = fit_growth_exponent(hubs, [float(r["dense_bytes"]) for r in ok])
+    dens_k = fit_growth_exponent(hubs, [float(r["matrix_density"]) for r in ok])
+    print("\n  READ THIS AS:")
+    print(f"    - Problem size grows ~linearly (vars ~ hubs^{var_k:.2f}), so the model itself scales cleanly.")
+    print(f"    - VA's memory grows ~hubs^{dense_k:.2f} because it stores the matrix densely,")
+    print(f"      while density itself falls ~hubs^{dens_k:.2f}. Memory, not variable count, binds first.")
+    if mode != "full":
+        print("    - Annealing time and solution quality are blank: preflight does not sample.")
+        print("      Run --mode full on the VE node (sfpga01n) to fill those columns.")
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--mode", choices=["preflight", "full"], default="preflight",
