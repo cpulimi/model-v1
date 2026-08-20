@@ -2818,6 +2818,17 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
         "batch_total_seconds": float(sum(r.total_seconds for r in results)),
         "peak_memory_mb": float(peak_mb),
         "current_memory_mb": float(current_mb),
+        # Construction split: pyqubo expression building + compile is one-time
+        # per batch, to_qubo re-feeds are per adaptive iteration.
+        "pyqubo_express_seconds": float(sum(s["pyqubo_express_seconds"] for s in all_va_stats)),
+        "pyqubo_compile_seconds": float(sum(s["pyqubo_compile_seconds"] for s in all_va_stats)),
+        # annealing_seconds is the VA card's own sample() wall time, the subset
+        # of wall_seconds actually spent on the VE.
+        "annealing_seconds": float(sum(r.sample_seconds for r in results)),
+        "annealing_share_of_wall": (
+            float(sum(r.sample_seconds for r in results)) / float(wall) if wall > 0 else 0.0
+        ),
+        **memory_breakdown_mb(),
     }
 
     precision_summary = print_precision_report(all_precision_rows)
