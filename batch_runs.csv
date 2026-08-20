@@ -1,0 +1,5 @@
+instance_name,seed,n_hubs,n_zips,n_parts,anchor_city_file
+fsl_10_hubs,10,10,200,150,
+fsl_20_hubs,20,20,400,150,
+fsl_50_hubs,50,50,1000,150,
+fsl_100_hubs,100,100,2000,150,
