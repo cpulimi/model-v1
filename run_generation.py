@@ -13,10 +13,11 @@ run_batch() itself and QA-checks the result.
 Two things the notebook assumes about Google Colab are handled here:
 
   1. DEFAULT_ANCHOR_CITY_FILE points at "/content/default_anchor_cities.csv",
-     which does not exist off Colab. When that path is missing, this script
-     repoints it at ./default_anchor_cities.csv. Rows whose `anchor_city_file`
-     column is blank therefore fall back to the local default, exactly as the
-     notebook intends. The notebook file itself is never modified.
+     the Colab location. Off Colab that path does not exist, so this script
+     repoints it at the project's own ./default_anchor_cities.csv. Rows whose
+     `anchor_city_file` column is blank therefore fall back to that file,
+     exactly as the notebook intends. Only the path is rewritten; neither the
+     notebook nor the anchor CSV is modified.
   2. The notebook's last code cell calls run_batch() at import time. It is
      skipped during exec so the batch runs once, under this script's control.
 """
