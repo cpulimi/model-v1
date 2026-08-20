@@ -2928,6 +2928,59 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
             "total_constraint_retries": int(sum(s["va_constraint_retries"] for s in all_va_stats)),
         },
         "precision_audit": precision_summary,
+        # One flat block with every performance number, so a benchmark run does
+        # not have to join summary.json against three CSVs to get them.
+        "performance": {
+            "hubs": int(len(data["J"])),
+            "zips": int(len(data["zips"])),
+            "parts": int(len(data["K"])),
+            "active_demand_rows": int(len(data["active"])),
+            "batches": int(len(results)),
+            "num_z": int(sum(r.num_z for r in results)),
+            "num_y": int(sum(r.num_y for r in results)),
+            "num_x": int(sum(r.num_x for r in results)),
+            "binary_variables": int(sum(r.num_z + r.num_y + r.num_x for r in results)),
+            "max_batch_binary_variables": int(max(s["total_vars"] for s in all_va_stats)),
+            "qubo_interactions": int(sum(r.interactions for r in results)),
+            "matrix_density": float(
+                sum(s["matrix_density"] * s["total_vars"] for s in all_va_stats)
+                / max(1, sum(s["total_vars"] for s in all_va_stats))
+            ),
+            "min_batch_matrix_density": float(min(s["matrix_density"] for s in all_va_stats)),
+            "avg_couplings_per_var": float(
+                sum(s["avg_couplings_per_var"] * s["total_vars"] for s in all_va_stats)
+                / max(1, sum(s["total_vars"] for s in all_va_stats))
+            ),
+            "max_dense_matrix_bytes": int(max(s["dense_matrix_bytes"] for s in all_va_stats)),
+            "max_dense_waste_factor": float(max(s["dense_waste_factor"] for s in all_va_stats)),
+            "qubo_construction_seconds": float(runtime["qubo_build_seconds"]),
+            "annealing_seconds": float(runtime["annealing_seconds"]),
+            "evaluation_seconds": float(runtime["sample_eval_seconds"]),
+            "total_wall_seconds": float(runtime["wall_seconds"]),
+            "peak_memory_mb": float(runtime["peak_memory_mb"]),
+            "rss_peak_mb": float(runtime["rss_peak_mb"]),
+            # Quality. raw_* is what VA actually returned; final_* is after the
+            # repair/prune post-pass. Judge the annealer on raw_*: the post-pass
+            # repairs violations, so final_structural_violations is usually 0 and
+            # says nothing about sampler quality.
+            "raw_cost": float(raw_cost["total_cost"]),
+            "raw_structural_violations": int(raw_audit["total_structural_violations"]),
+            "raw_c1_violations": int(raw_audit["c1_assignment_violations"]),
+            "raw_c2_violations": int(raw_audit["c2_assignment_without_stock"]),
+            "raw_c3_violations": int(raw_audit["c3_stock_without_open_hub"]),
+            "raw_c4_hubs_over_L": int(raw_audit["c4_hubs_over_L"]),
+            "batch_c1_violations": int(sum(r.c1_violations for r in results)),
+            "batch_c2_violations": int(sum(r.c2_violations for r in results)),
+            "batch_c3_violations": int(sum(r.c3_violations for r in results)),
+            "batch_c4_violations": int(sum(r.c4_violations for r in results)),
+            "batches_feasible_from_sampler": int(
+                sum(1 for s in all_va_stats if s["adaptive_was_feasible"])
+            ),
+            "structurally_feasible_reads": int(
+                sum(s["structurally_feasible_reads"] for s in all_va_stats)
+            ),
+            "total_reads": int(sum(s["va_total_reads"] for s in all_va_stats)),
+        },
     }
 
     summary = write_solution_outputs(
