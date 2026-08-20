@@ -1,0 +1,692 @@
+<title>Vector Annealing Scaling Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  color-scheme: light;
+  --ground:      #fbfbfd;
+  --surface:     #ffffff;
+  --panel:       #f4f5f8;
+  --line:        #e0e3ea;
+  --line-strong: #c6cbd6;
+  --ink:         #14161c;
+  --ink-2:       #545b6b;
+  --ink-3:       #868d9d;
+
+  --s-size:      #2a78d6;   /* problem size — the well-behaved metric */
+  --s-mem:       #eb6834;   /* device memory — the constraint */
+  --s-density:   #1baf7a;   /* matrix density */
+  --critical:    #c92a2a;
+
+  --s-size-soft:    #2a78d61f;
+  --s-mem-soft:     #eb68341f;
+  --s-density-soft: #1baf7a1f;
+
+  --radius: 3px;
+  --maxw: 1120px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground:      #101216;
+    --surface:     #171a20;
+    --panel:       #1e222a;
+    --line:        #2b303a;
+    --line-strong: #3d4450;
+    --ink:         #eef0f4;
+    --ink-2:       #a7aebd;
+    --ink-3:       #757c8b;
+
+    --s-size:      #3987e5;
+    --s-mem:       #d95926;
+    --s-density:   #199e70;
+    --critical:    #f26d6d;
+
+    --s-size-soft:    #3987e526;
+    --s-mem-soft:     #d9592626;
+    --s-density-soft: #199e7026;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:      #101216;
+  --surface:     #171a20;
+  --panel:       #1e222a;
+  --line:        #2b303a;
+  --line-strong: #3d4450;
+  --ink:         #eef0f4;
+  --ink-2:       #a7aebd;
+  --ink-3:       #757c8b;
+
+  --s-size:      #3987e5;
+  --s-mem:       #d95926;
+  --s-density:   #199e70;
+  --critical:    #f26d6d;
+
+  --s-size-soft:    #3987e526;
+  --s-mem-soft:     #d9592626;
+  --s-density-soft: #199e7026;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+
+h1, h2, h3 { font-family: Archivo, "IBM Plex Sans", sans-serif; text-wrap: balance; margin: 0; }
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+.eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; font-weight: 500;
+  letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ---------- header ---------- */
+header {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  padding: 44px 0 34px;
+}
+header h1 {
+  font-size: clamp(30px, 4.4vw, 44px);
+  font-weight: 700; letter-spacing: -0.021em;
+  line-height: 1.08; margin: 12px 0 14px;
+  max-width: 22ch;
+}
+.standfirst {
+  font-size: 17px; color: var(--ink-2);
+  max-width: 62ch; margin: 0;
+}
+.runmeta {
+  display: flex; flex-wrap: wrap; gap: 0 30px;
+  margin-top: 26px; padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.runmeta div { display: flex; flex-direction: column; gap: 2px; }
+.runmeta dt { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); }
+.runmeta dd { margin: 0; font-size: 13.5px; font-weight: 500; font-family: "IBM Plex Mono", monospace; }
+
+/* ---------- sections ---------- */
+section { padding: 52px 0; border-bottom: 1px solid var(--line); }
+section:last-of-type { border-bottom: 0; }
+.sechead { margin-bottom: 26px; }
+.sechead h2 {
+  font-size: 21px; font-weight: 600; letter-spacing: -0.012em;
+  margin: 7px 0 8px;
+}
+.sechead p { margin: 0; color: var(--ink-2); max-width: 68ch; font-size: 14.5px; }
+
+/* ---------- verdict tiles ---------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.tile { background: var(--surface); padding: 20px 22px 22px; display: flex; flex-direction: column; gap: 5px; }
+.tile .label { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.tile .value { font-family: Archivo, sans-serif; font-size: 33px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.tile .sub { font-size: 13px; color: var(--ink-2); }
+.tile.size  .value { color: var(--s-size); }
+.tile.mem   .value { color: var(--s-mem); }
+.tile.dens  .value { color: var(--s-density); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  align-self: flex-start; margin-top: 3px;
+  font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 2px; border: 1px solid;
+}
+.chip.ok   { color: var(--s-size);    border-color: var(--s-size);    background: var(--s-size-soft); }
+.chip.warn { color: var(--s-mem);     border-color: var(--s-mem);     background: var(--s-mem-soft); }
+.chip.down { color: var(--s-density); border-color: var(--s-density); background: var(--s-density-soft); }
+
+/* ---------- figures ---------- */
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px 18px; }
+figcaption { font-size: 13px; color: var(--ink-2); margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
+.figtitle { font-family: Archivo, sans-serif; font-size: 15.5px; font-weight: 600; margin: 0 0 3px; }
+.figsub { font-size: 13px; color: var(--ink-3); margin: 0 0 16px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); }
+.swatch { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+
+.chartbox { position: relative; overflow-x: auto; }
+svg { display: block; max-width: 100%; height: auto; }
+.grid-line { stroke: var(--line); stroke-width: 1; }
+.axis-line { stroke: var(--line-strong); stroke-width: 1; }
+.tick { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; fill: var(--ink-3); font-variant-numeric: tabular-nums; }
+.axis-title { font-family: "IBM Plex Mono", monospace; font-size: 10px; fill: var(--ink-3); letter-spacing: 0.09em; text-transform: uppercase; }
+.dlabel { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hit { fill: transparent; cursor: pointer; }
+
+.tooltip {
+  position: absolute; pointer-events: none; opacity: 0;
+  transition: opacity .12s ease;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
+  box-shadow: 0 6px 22px rgba(0,0,0,.13); z-index: 5; min-width: 150px;
+}
+.tooltip .tt-h { font-family: Archivo, sans-serif; font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+.tooltip .tt-r { display: flex; justify-content: space-between; gap: 16px; font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+.tooltip .tt-r span:first-child { color: var(--ink-2); }
+
+.twocol { display: grid; grid-template-columns: 1.35fr 1fr; gap: 20px; }
+@media (max-width: 860px) { .twocol { grid-template-columns: 1fr; } }
+
+/* ---------- table ---------- */
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 9px 13px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+thead th {
+  font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
+  background: var(--panel); position: sticky; top: 0;
+}
+tbody td { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+tbody td:first-child { font-family: "IBM Plex Sans", sans-serif; font-weight: 500; }
+tbody tr:last-child td { border-bottom: 0; }
+tfoot td {
+  font-family: "IBM Plex Mono", monospace; font-size: 11px;
+  color: var(--ink-2); background: var(--panel); border-top: 1px solid var(--line-strong);
+}
+
+/* ---------- projection ---------- */
+.proj { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.prow { display: grid; grid-template-columns: 78px 118px 1fr 128px; align-items: center; gap: 16px; background: var(--surface); padding: 11px 18px; }
+.prow.head { background: var(--panel); }
+.prow.head > * { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.prow .hubs { font-family: Archivo, sans-serif; font-weight: 600; font-size: 15px; }
+.prow .vars { font-family: "IBM Plex Mono", monospace; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 22px; background: var(--panel); border-radius: 2px; overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; display: block; border-radius: 2px; }
+.bar .ceil { position: absolute; top: -3px; bottom: -3px; width: 2px; }
+.verdict { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; font-weight: 600; text-align: right; }
+.verdict.fits { color: var(--s-size); }
+.verdict.over { color: var(--critical); }
+.measured { font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--ink-3); letter-spacing: .06em; }
+
+/* ---------- callout ---------- */
+.callout { border: 1px solid var(--line); border-left: 3px solid var(--s-mem); background: var(--surface); border-radius: var(--radius); padding: 20px 24px; }
+.callout h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.callout p { margin: 0 0 10px; color: var(--ink-2); max-width: 72ch; }
+.callout p:last-child { margin-bottom: 0; }
+.callout.pending { border-left-color: var(--ink-3); }
+
+ul.plain { margin: 0; padding-left: 18px; color: var(--ink-2); }
+ul.plain li { margin-bottom: 7px; }
+ul.plain li::marker { color: var(--ink-3); }
+strong { color: var(--ink); font-weight: 600; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 0.9em; background: var(--panel); padding: 1px 5px; border-radius: 2px; }
+
+footer { padding: 30px 0 46px; color: var(--ink-3); font-size: 12.5px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">NEC Vector Annealing · FSL digital twin</div>
+    <h1>Where Vector Annealing stops scaling</h1>
+    <p class="standfirst">
+      Four synthetic instances from 10 to 100 hubs, profiled through the solver's full
+      formulation path. The model scales linearly. The card's memory does not — and that
+      gap, not the variable count, is what ends the run.
+    </p>
+    <dl class="runmeta">
+      <div><dt>Instances</dt><dd>4 · 10→100 hubs</dd></div>
+      <div><dt>Part catalog</dt><dd>150 (held constant)</dd></div>
+      <div><dt>ZIPs per hub</dt><dd>20 (held constant)</dd></div>
+      <div><dt>Modeling</dt><dd>pyqubo → to_qubo()</dd></div>
+      <div><dt>Mode</dt><dd>preflight (no VE card)</dd></div>
+    </dl>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <div class="sechead">
+      <div class="eyebrow">The finding</div>
+      <h2>One metric misbehaves, and it is not the one that grows</h2>
+      <p>
+        Each figure is the growth exponent <em>k</em> fitted across the suite, where the metric
+        scales as hubs<sup>k</sup>. k=1 means it doubles when hubs double; k=2 means it quadruples.
+      </p>
+    </div>
+    <div class="tiles">
+      <div class="tile size">
+        <div class="label">Binary variables</div>
+        <div class="value">k = 1.04</div>
+        <div class="chip ok">Linear</div>
+        <div class="sub">4,397 → 47,315 across the suite. Doubles when hubs double.</div>
+      </div>
+      <div class="tile mem">
+        <div class="label">Device memory</div>
+        <div class="value">k = 2.08</div>
+        <div class="chip warn">Quadratic</div>
+        <div class="sub">73.8 MiB → 8.3 GiB. Quadruples when hubs double.</div>
+      </div>
+      <div class="tile dens">
+        <div class="label">Matrix density</div>
+        <div class="value">k = −0.99</div>
+        <div class="chip down">Shrinking</div>
+        <div class="sub">0.068% → 0.0071%. The matrix empties out as it grows.</div>
+      </div>
+      <div class="tile">
+        <div class="label">Couplings per variable</div>
+        <div class="value">2.3</div>
+        <div class="chip ok">Flat</div>
+        <div class="sub">Each variable touches ~2 others, at every size.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <div class="eyebrow">Figure 1</div>
+      <h2>Two curves, drawn from the same four runs</h2>
+      <p>
+        Both series are indexed to their value at 10 hubs, so the axis reads as growth
+        multiple rather than raw units. A log scale keeps both visible; a straight line on
+        it means clean power-law growth.
+      </p>
+    </div>
+    <figure>
+      <p class="figtitle">Growth relative to the 10-hub instance</p>
+      <p class="figsub">Log scale. Steeper is worse.</p>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--s-size)"></i> Binary variables — what the model needs</span>
+        <span><i class="swatch" style="background:var(--s-mem)"></i> VA dense matrix — what the card must hold</span>
+      </div>
+      <div class="chartbox" id="box-growth">
+        <svg id="chart-growth" viewBox="0 0 780 360" role="img"
+             aria-label="Log-scale growth chart. Binary variables rise from 1x to 10.8x between 10 and 100 hubs. VA dense matrix memory rises from 1x to 115.8x over the same range.">
+        </svg>
+        <div class="tooltip" id="tt-growth"></div>
+      </div>
+      <figcaption>
+        At 100 hubs the model needs <strong>10.8×</strong> the variables of the 10-hub case but
+        <strong>115.8×</strong> the device memory. The gap between the lines is the cost of dense storage.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <div class="eyebrow">Figure 2</div>
+      <h2>Why the memory curve is so steep</h2>
+      <p>
+        Vector Annealing allocates a full <code>n × n</code> matrix at 4 bytes per cell, whatever
+        the coupling structure looks like. This model's couplings are local, so the matrix is
+        overwhelmingly zeros — and gets emptier at every size.
+      </p>
+    </div>
+    <div class="twocol">
+      <figure>
+        <p class="figtitle">Share of the matrix that is actually non-zero</p>
+        <p class="figsub">Density falls as 1/n — halving each time the problem doubles.</p>
+        <div class="chartbox" id="box-density">
+          <svg id="chart-density" viewBox="0 0 480 300" role="img"
+               aria-label="Matrix density falls from 0.068 percent at 10 hubs to 0.0071 percent at 100 hubs.">
+          </svg>
+          <div class="tooltip" id="tt-density"></div>
+        </div>
+        <figcaption>
+          Every instance is below one tenth of one percent. The couplings are local:
+          Z–Z only within a demand row, Z–Y and Y–X only along the hub and part they belong to.
+        </figcaption>
+      </figure>
+      <figure>
+        <p class="figtitle">Allocated vs. needed</p>
+        <p class="figsub">The same couplings, stored densely and sparsely.</p>
+        <div class="chartbox" id="box-waste">
+          <svg id="chart-waste" viewBox="0 0 400 300" role="img"
+               aria-label="Dense storage waste factor grows from 734 times at 10 hubs to 7,264 times at 100 hubs.">
+          </svg>
+          <div class="tooltip" id="tt-waste"></div>
+        </div>
+        <figcaption>
+          At 100 hubs the card holds <strong>8.3 GiB</strong> to represent couplings that
+          would fit in <strong>1.2 MiB</strong>. The waste factor itself grows linearly.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <div class="eyebrow">Figure 3</div>
+      <h2>How much headroom is left</h2>
+      <p>
+        Extrapolating the fitted law (variables ≈ hubs<sup>1.04</sup>) against the two limits that
+        matter: the configured per-batch ceiling of 60,000 variables, and Vector Annealing's
+        hard maximum of 100,000 binary variables.
+      </p>
+    </div>
+    <div class="proj">
+      <div class="prow head">
+        <div>Hubs</div><div>Binary vars</div><div>Against the 60k ceiling and 100k hard max</div><div style="text-align:right">Single batch</div>
+      </div>
+      <div class="prow">
+        <div class="hubs">100 <span class="measured">real</span></div>
+        <div class="vars">47,315</div>
+        <div class="bar">
+          <i style="width:47.3%;background:var(--s-size)"></i>
+          <span class="ceil" style="left:60%;background:var(--line-strong)"></span>
+          <span class="ceil" style="left:99.6%;background:var(--critical)"></span>
+        </div>
+        <div class="verdict fits">Fits</div>
+      </div>
+      <div class="prow">
+        <div class="hubs">150</div>
+        <div class="vars">73,641</div>
+        <div class="bar">
+          <i style="width:73.6%;background:var(--s-mem)"></i>
+          <span class="ceil" style="left:60%;background:var(--line-strong)"></span>
+          <span class="ceil" style="left:99.6%;background:var(--critical)"></span>
+        </div>
+        <div class="verdict over">Over 60k</div>
+      </div>
+      <div class="prow">
+        <div class="hubs">200</div>
+        <div class="vars">99,344</div>
+        <div class="bar">
+          <i style="width:99.3%;background:var(--s-mem)"></i>
+          <span class="ceil" style="left:60%;background:var(--line-strong)"></span>
+          <span class="ceil" style="left:99.6%;background:var(--critical)"></span>
+        </div>
+        <div class="verdict over">At the hard max</div>
+      </div>
+      <div class="prow">
+        <div class="hubs">250</div>
+        <div class="vars">125,313</div>
+        <div class="bar">
+          <i style="width:100%;background:var(--critical)"></i>
+          <span class="ceil" style="left:60%;background:var(--line-strong)"></span>
+          <span class="ceil" style="left:99.6%;background:var(--critical)"></span>
+        </div>
+        <div class="verdict over">Over hard max</div>
+      </div>
+      <div class="prow">
+        <div class="hubs">300</div>
+        <div class="vars">151,495</div>
+        <div class="bar">
+          <i style="width:100%;background:var(--critical)"></i>
+          <span class="ceil" style="left:60%;background:var(--line-strong)"></span>
+          <span class="ceil" style="left:99.6%;background:var(--critical)"></span>
+        </div>
+        <div class="verdict over">Over hard max</div>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:22px">
+      <h3>Batching is the lever, and it already works</h3>
+      <p>
+        Every instance above ran as a <strong>single batch</strong>. Forcing the 100-hub instance
+        into 5 batches with <code>--max-z-vars-per-batch 8000</code> dropped the largest dense
+        allocation from <strong>8.3 GiB to 464 MiB</strong> and host memory from 58 MB to 19 MB,
+        with no failures. Past roughly 126 hubs, batching stops being optional.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <div class="eyebrow">Recorded metrics</div>
+      <h2>Everything measured, per instance</h2>
+      <p>
+        Device-side and host-side memory are separate resources and should not be added together.
+        Dense matrix is what the VE card must hold; peak RSS is Python building the QUBO before transfer.
+      </p>
+    </div>
+    <div class="tablebox">
+      <table>
+        <thead>
+          <tr>
+            <th>Instance</th><th>Hubs</th><th>Demand rows</th><th>Z</th><th>Y</th><th>X</th>
+            <th>Binary vars</th><th>Interactions</th><th>Density</th><th>Cpl/var</th>
+            <th>Dense (device)</th><th>Sparse equiv</th><th>Waste</th>
+            <th>Build s</th><th>Wall s</th><th>Peak RSS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>fsl_10_hubs</td><td>10</td><td>3,207</td><td>3,207</td><td>1,180</td><td>10</td><td>4,397</td><td>8,784</td><td>0.0681%</td><td>2.00</td><td>73.8 MiB</td><td>102.9 KiB</td><td>734×</td><td>0.48</td><td>0.74</td><td>180 MB</td></tr>
+          <tr><td>fsl_20_hubs</td><td>20</td><td>5,996</td><td>6,261</td><td>2,378</td><td>20</td><td>8,659</td><td>17,563</td><td>0.0353%</td><td>2.06</td><td>286.0 MiB</td><td>205.8 KiB</td><td>1,423×</td><td>0.92</td><td>1.32</td><td>258 MB</td></tr>
+          <tr><td>fsl_50_hubs</td><td>50</td><td>15,126</td><td>17,449</td><td>6,153</td><td>50</td><td>23,652</td><td>49,816</td><td>0.0136%</td><td>2.21</td><td>2.1 GiB</td><td>583.8 KiB</td><td>3,743×</td><td>2.57</td><td>3.48</td><td>482 MB</td></tr>
+          <tr><td>fsl_100_hubs</td><td>100</td><td>28,192</td><td>35,050</td><td>12,165</td><td>100</td><td>47,315</td><td>102,732</td><td>0.0071%</td><td>2.34</td><td>8.3 GiB</td><td>1.2 MiB</td><td>7,264×</td><td>5.26</td><td>6.99</td><td>879 MB</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>Growth exponent k</td><td>—</td><td>0.95</td><td colspan="3">—</td><td>1.04</td><td>1.08</td><td>−0.99</td><td>0.07</td><td>2.08</td><td>1.06</td><td>1.04</td><td>1.05</td><td>0.99</td><td>0.69</td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <div class="eyebrow">Reading it</div>
+      <h2>What this does and does not tell you</h2>
+    </div>
+    <div style="display:grid;gap:16px">
+      <div class="callout">
+        <h3>Established</h3>
+        <ul class="plain">
+          <li>The pipeline runs clean end to end on all four sizes — load, batch, formulate, compile, emit QUBO, ceiling check — with no failures.</li>
+          <li>Problem size, construction time and total runtime all scale <strong>linearly</strong> with hub count. Nothing in the model or the pyqubo layer degrades.</li>
+          <li>Device memory scales <strong>quadratically</strong> and is the binding constraint. Single-batch headroom ends near <strong>126 hubs</strong> at the configured ceiling, <strong>210</strong> at the hard maximum.</li>
+          <li>Host memory grows sub-linearly and stays under 1 GB. It is not a concern at these sizes.</li>
+        </ul>
+      </div>
+      <div class="callout pending">
+        <h3>Not yet measured — needs the VE card</h3>
+        <p>
+          These runs are preflight: they formulate and compile the QUBO but never sample it. Annealing
+          time, solution cost and constraint violations are therefore absent by construction, not missing
+          by oversight. Running <code>va_benchmark.py --mode full</code> on <code>sfpga01n</code> fills those columns.
+        </p>
+        <p>
+          When it does: judge the annealer on the <strong>raw</strong> violation counts, not the final ones.
+          The repair and hub-prune post-pass drives final structural violations to zero almost regardless of
+          what the sampler returned, so the final figure measures the post-pass, not Vector Annealing.
+        </p>
+      </div>
+      <div class="callout">
+        <h3>Worth raising with NEC</h3>
+        <p>
+          A density of 0.007% at 2.3 couplings per variable is an unusually poor fit for dense storage.
+          If Vector Annealing V3.0.0 exposes any sparse or block ingest path, it is worth far more on this
+          workload than any amount of sampling-parameter tuning — it would convert a quadratic memory wall
+          back into a linear one.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Generated by <code>va_benchmark.py --mode preflight</code> over <code>outputs/fsl_*_hubs</code>.
+    Growth exponents are log–log fits across the four instances. Device-memory figures are
+    <code>binary_vars² × 4 B</code>, the allocation Vector Annealing makes regardless of density.
+  </footer>
+</div>
+
+<script>
+const DATA = [
+  { name: "fsl_10_hubs",  hubs: 10,  vars: 4397,  inter: 8784,   dense: 77334436,   sparse: 105408,  density: 0.000681, waste: 734,  build: 0.48, rss: 180 },
+  { name: "fsl_20_hubs",  hubs: 20,  vars: 8659,  inter: 17563,  dense: 299913124,  sparse: 210756,  density: 0.000353, waste: 1423, build: 0.92, rss: 258 },
+  { name: "fsl_50_hubs",  hubs: 50,  vars: 23652, inter: 49816,  dense: 2237668416, sparse: 597792,  density: 0.000136, waste: 3743, build: 2.57, rss: 482 },
+  { name: "fsl_100_hubs", hubs: 100, vars: 47315, inter: 102732, dense: 8954836900, sparse: 1232784, density: 0.000071, waste: 7264, build: 5.26, rss: 879 }
+];
+
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a = {}) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const fmt = n => n.toLocaleString("en-US");
+const bytes = b => {
+  const u = ["B", "KiB", "MiB", "GiB"]; let x = b, i = 0;
+  while (x >= 1024 && i < u.length - 1) { x /= 1024; i++; }
+  return x.toFixed(1) + " " + u[i];
+};
+
+function tipOn(box, tip, node, html) {
+  node.addEventListener("mouseenter", () => { tip.innerHTML = html; tip.style.opacity = "1"; });
+  node.addEventListener("mousemove", ev => {
+    const r = box.getBoundingClientRect();
+    let x = ev.clientX - r.left + 14, y = ev.clientY - r.top - 12;
+    if (x + tip.offsetWidth > r.width) x = ev.clientX - r.left - tip.offsetWidth - 14;
+    tip.style.left = Math.max(0, x) + "px";
+    tip.style.top = Math.max(0, y) + "px";
+  });
+  node.addEventListener("mouseleave", () => { tip.style.opacity = "0"; });
+}
+
+/* ---------- Figure 1: indexed growth, log y ---------- */
+(function () {
+  const svg = document.getElementById("chart-growth");
+  const box = document.getElementById("box-growth");
+  const tip = document.getElementById("tt-growth");
+  const W = 780, H = 360, M = { t: 18, r: 74, b: 46, l: 56 };
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+
+  const base = DATA[0];
+  const series = [
+    { key: "vars",  color: "var(--s-size)", label: "Binary variables", fmtv: d => fmt(d.vars) + " vars" },
+    { key: "dense", color: "var(--s-mem)",  label: "VA dense matrix",  fmtv: d => bytes(d.dense) }
+  ];
+
+  const xs = DATA.map(d => Math.log10(d.hubs));
+  const x0 = Math.log10(9), x1 = Math.log10(115);
+  const X = v => M.l + (v - x0) / (x1 - x0) * iw;
+  const yTicks = [1, 2, 5, 10, 25, 50, 100, 200];
+  const y0 = Math.log10(0.85), y1 = Math.log10(200);
+  const Y = v => M.t + ih - (Math.log10(v) - y0) / (y1 - y0) * ih;
+
+  yTicks.forEach(t => {
+    svg.appendChild(el("line", { x1: M.l, x2: M.l + iw, y1: Y(t), y2: Y(t), class: "grid-line" }));
+    const lb = el("text", { x: M.l - 10, y: Y(t) + 3.5, class: "tick", "text-anchor": "end" });
+    lb.textContent = t + "×"; svg.appendChild(lb);
+  });
+  svg.appendChild(el("line", { x1: M.l, x2: M.l + iw, y1: M.t + ih, y2: M.t + ih, class: "axis-line" }));
+  DATA.forEach(d => {
+    const lb = el("text", { x: X(Math.log10(d.hubs)), y: M.t + ih + 20, class: "tick", "text-anchor": "middle" });
+    lb.textContent = d.hubs; svg.appendChild(lb);
+  });
+  const xt = el("text", { x: M.l + iw / 2, y: H - 8, class: "axis-title", "text-anchor": "middle" });
+  xt.textContent = "Hubs"; svg.appendChild(xt);
+  const yt = el("text", { x: 14, y: M.t + ih / 2, class: "axis-title", "text-anchor": "middle",
+                          transform: `rotate(-90 14 ${M.t + ih / 2})` });
+  yt.textContent = "Growth vs 10 hubs"; svg.appendChild(yt);
+
+  series.forEach(s => {
+    const pts = DATA.map(d => [X(Math.log10(d.hubs)), Y(d[s.key] / base[s.key])]);
+    svg.appendChild(el("polyline", {
+      points: pts.map(p => p.join(",")).join(" "),
+      fill: "none", stroke: s.color, "stroke-width": 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round"
+    }));
+    pts.forEach((p, i) => {
+      svg.appendChild(el("circle", { cx: p[0], cy: p[1], r: 4.5, fill: s.color,
+                                     stroke: "var(--surface)", "stroke-width": 2 }));
+      const hit = el("circle", { cx: p[0], cy: p[1], r: 16, class: "hit" });
+      svg.appendChild(hit);
+      const d = DATA[i], mult = (d[s.key] / base[s.key]);
+      tipOn(box, tip, hit,
+        `<div class="tt-h">${d.hubs} hubs · ${s.label}</div>
+         <div class="tt-r"><span>Value</span><span>${s.fmtv(d)}</span></div>
+         <div class="tt-r"><span>Growth</span><span>${mult.toFixed(1)}×</span></div>`);
+    });
+    const last = pts[pts.length - 1], d = DATA[DATA.length - 1];
+    const lab = el("text", { x: last[0] + 11, y: last[1] + 4, class: "dlabel", fill: s.color });
+    lab.textContent = (d[s.key] / base[s.key]).toFixed(1) + "×"; svg.appendChild(lab);
+  });
+})();
+
+/* ---------- Figure 2a: density ---------- */
+(function () {
+  const svg = document.getElementById("chart-density");
+  const box = document.getElementById("box-density");
+  const tip = document.getElementById("tt-density");
+  // Top margin leaves room for the value label sitting above the tallest bar.
+  const W = 480, H = 300, M = { t: 32, r: 20, b: 44, l: 62 };
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const bw = iw / DATA.length;
+  const maxD = DATA[0].density;
+
+  [0, 0.25, 0.5, 0.75, 1].forEach(f => {
+    const y = M.t + ih - f * ih;
+    svg.appendChild(el("line", { x1: M.l, x2: M.l + iw, y1: y, y2: y, class: "grid-line" }));
+    const lb = el("text", { x: M.l - 9, y: y + 3.5, class: "tick", "text-anchor": "end" });
+    lb.textContent = (maxD * f * 100).toFixed(3) + "%"; svg.appendChild(lb);
+  });
+  svg.appendChild(el("line", { x1: M.l, x2: M.l + iw, y1: M.t + ih, y2: M.t + ih, class: "axis-line" }));
+
+  DATA.forEach((d, i) => {
+    const h = Math.max(2, (d.density / maxD) * ih);
+    const x = M.l + i * bw + 7, w = bw - 16;
+    const r = el("rect", { x, y: M.t + ih - h, width: w, height: h, rx: 3,
+                           fill: "var(--s-density)" });
+    svg.appendChild(r);
+    const v = el("text", { x: x + w / 2, y: M.t + ih - h - 7, class: "dlabel",
+                           fill: "var(--ink-2)", "text-anchor": "middle" });
+    v.textContent = (d.density * 100).toFixed(3) + "%"; svg.appendChild(v);
+    const lb = el("text", { x: x + w / 2, y: M.t + ih + 19, class: "tick", "text-anchor": "middle" });
+    lb.textContent = d.hubs; svg.appendChild(lb);
+    const hit = el("rect", { x, y: M.t, width: w, height: ih, class: "hit" });
+    svg.appendChild(hit);
+    tipOn(box, tip, hit,
+      `<div class="tt-h">${d.hubs} hubs</div>
+       <div class="tt-r"><span>Density</span><span>${(d.density * 100).toFixed(4)}%</span></div>
+       <div class="tt-r"><span>Non-zero</span><span>${fmt(d.inter)}</span></div>
+       <div class="tt-r"><span>Cells</span><span>${fmt(d.vars * d.vars)}</span></div>`);
+  });
+  const xt = el("text", { x: M.l + iw / 2, y: H - 8, class: "axis-title", "text-anchor": "middle" });
+  xt.textContent = "Hubs"; svg.appendChild(xt);
+})();
+
+/* ---------- Figure 2b: waste factor ---------- */
+(function () {
+  const svg = document.getElementById("chart-waste");
+  const box = document.getElementById("box-waste");
+  const tip = document.getElementById("tt-waste");
+  const W = 400, H = 300, M = { t: 16, r: 18, b: 44, l: 60 };
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const bw = iw / DATA.length;
+  const maxW = DATA[DATA.length - 1].waste;
+
+  [0, 0.25, 0.5, 0.75, 1].forEach(f => {
+    const y = M.t + ih - f * ih;
+    svg.appendChild(el("line", { x1: M.l, x2: M.l + iw, y1: y, y2: y, class: "grid-line" }));
+    const lb = el("text", { x: M.l - 9, y: y + 3.5, class: "tick", "text-anchor": "end" });
+    lb.textContent = fmt(Math.round(maxW * f)) + "×"; svg.appendChild(lb);
+  });
+  svg.appendChild(el("line", { x1: M.l, x2: M.l + iw, y1: M.t + ih, y2: M.t + ih, class: "axis-line" }));
+
+  DATA.forEach((d, i) => {
+    const h = Math.max(2, (d.waste / maxW) * ih);
+    const x = M.l + i * bw + 6, w = bw - 14;
+    svg.appendChild(el("rect", { x, y: M.t + ih - h, width: w, height: h, rx: 3, fill: "var(--s-mem)" }));
+    const v = el("text", { x: x + w / 2, y: M.t + ih - h - 7, class: "dlabel",
+                           fill: "var(--ink-2)", "text-anchor": "middle" });
+    v.textContent = fmt(d.waste) + "×"; svg.appendChild(v);
+    const lb = el("text", { x: x + w / 2, y: M.t + ih + 19, class: "tick", "text-anchor": "middle" });
+    lb.textContent = d.hubs; svg.appendChild(lb);
+    const hit = el("rect", { x, y: M.t, width: w, height: ih, class: "hit" });
+    svg.appendChild(hit);
+    tipOn(box, tip, hit,
+      `<div class="tt-h">${d.hubs} hubs</div>
+       <div class="tt-r"><span>Allocated</span><span>${bytes(d.dense)}</span></div>
+       <div class="tt-r"><span>Needed</span><span>${bytes(d.sparse)}</span></div>
+       <div class="tt-r"><span>Waste</span><span>${fmt(d.waste)}×</span></div>`);
+  });
+  const xt = el("text", { x: M.l + iw / 2, y: H - 8, class: "axis-title", "text-anchor": "middle" });
+  xt.textContent = "Hubs"; svg.appendChild(xt);
+})();
+</script>
