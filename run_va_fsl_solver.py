@@ -1572,11 +1572,36 @@ def postprocess_qubo_solution(
 # ---------------------------------------------------------------------------
 
 
+def discover_va_installs() -> list[str]:
+    """List on-disk VA python directories, newest-looking last. Diagnostics only."""
+    try:
+        return sorted(glob.glob(VA_CANDIDATE_GLOB))
+    except Exception:
+        return []
+
+
+def visible_ve_devices() -> list[str]:
+    """The VE card device nodes visible to THIS host. Empty means no local card."""
+    devices: list[str] = []
+    for pattern in VE_DEVICE_GLOBS:
+        try:
+            devices.extend(glob.glob(pattern))
+        except Exception:
+            pass
+    return sorted(set(devices))
+
+
 def import_vector_annealing() -> Any:
-    """Import VectorAnnealing or exit with actionable guidance. No fallback."""
+    """Import the local VectorAnnealing module, or exit with actionable guidance.
+
+    There is no fallback and no remote path: this imports the on-prem module
+    that drives the physical VE card in this node. It never constructs a service
+    client and never opens a network connection.
+    """
     try:
         import VectorAnnealing  # type: ignore
     except Exception as exc:  # ImportError, but VA can also fail on VE probing
+        installs = discover_va_installs()
         print("=" * 76, file=sys.stderr)
         print("ERROR: could not import VectorAnnealing.", file=sys.stderr)
         print(f"  underlying error: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -1584,15 +1609,27 @@ def import_vector_annealing() -> Any:
         print("  Source the VA environment and put the VA python dir on PYTHONPATH:", file=sys.stderr)
         print("    source /opt/nec/ve/nlc/<ver>/bin/nlcvars.sh", file=sys.stderr)
         print("    export PATH=${PATH}:/opt/nec/ve/bin", file=sys.stderr)
-        print("    export PYTHONPATH=/opt/va/VApoc_0201/libexec/VectorAnnealing/python:${PYTHONPATH}", file=sys.stderr)
-        print(f"  (paths per {VA_MANUAL_REF}; adjust to the installed version)", file=sys.stderr)
+        if installs:
+            print("", file=sys.stderr)
+            print(f"  VA installs found on this host ({VA_CANDIDATE_GLOB}):", file=sys.stderr)
+            for path in installs:
+                print(f"    export PYTHONPATH={path}:${{PYTHONPATH}}", file=sys.stderr)
+        else:
+            print("    export PYTHONPATH=/opt/va/<version>/libexec/VectorAnnealing/python:${PYTHONPATH}", file=sys.stderr)
+            print(f"  NOTE: nothing matched {VA_CANDIDATE_GLOB} on this host.", file=sys.stderr)
+            print("        You are probably not on the VE node. On ASU SOL use sfpga01n", file=sys.stderr)
+            print("        (va_solve.sh pins '#SBATCH -w sfpga01n').", file=sys.stderr)
         print("", file=sys.stderr)
         print(f"  active python:   {sys.executable}", file=sys.stderr)
         print(f"  python version:  {sys.version.splitlines()[0]}", file=sys.stderr)
-        print(f"  PYTHONPATH:      {__import__('os').environ.get('PYTHONPATH', '<unset>')}", file=sys.stderr)
+        print(f"  hostname:        {socket.gethostname()}", file=sys.stderr)
+        print(f"  PYTHONPATH:      {os.environ.get('PYTHONPATH', '<unset>')}", file=sys.stderr)
+        print(f"  VE devices:      {visible_ve_devices() or '<none visible from this host>'}", file=sys.stderr)
         print("", file=sys.stderr)
-        print("  This solver does not fall back to any other sampler.", file=sys.stderr)
-        print("  Run with --dry-run to validate the batch plan without a VE card.", file=sys.stderr)
+        print("  This solver does not fall back to any other sampler, and has no", file=sys.stderr)
+        print("  cloud/service-client path. Run va_probe.py on the VE node to inspect", file=sys.stderr)
+        print("  the installed module, or --dry-run to validate the batch plan with", file=sys.stderr)
+        print("  no card at all.", file=sys.stderr)
         print("=" * 76, file=sys.stderr)
         raise SystemExit(2)
 
@@ -1603,10 +1640,29 @@ def import_vector_annealing() -> Any:
             version = str(value)
             break
 
-    print("VectorAnnealing imported.", flush=True)
-    print(f"  module file:     {getattr(VectorAnnealing, '__file__', '<unknown>')}", flush=True)
+    module_file = getattr(VectorAnnealing, "__file__", None)
+    devices = visible_ve_devices()
+
+    print("VectorAnnealing imported (local on-prem module; no service client).", flush=True)
+    print(f"  module file:     {module_file or '<built-in / no __file__>'}", flush=True)
     print(f"  module version:  {version if version else '<module exposes no version attribute>'}", flush=True)
     print(f"  python:          {sys.version.splitlines()[0]}", flush=True)
+    print(f"  hostname:        {socket.gethostname()}", flush=True)
+    print(f"  VE_NODE_NUMBER:  {os.environ.get('VE_NODE_NUMBER', '<unset>')}", flush=True)
+    print(
+        f"  VE devices:      {len(devices)} card(s) visible"
+        + (f" -> {', '.join(devices)}" if devices else " -> NONE"),
+        flush=True,
+    )
+    if not devices:
+        # Not fatal: device nodes can be hidden by cgroups even when usable, and
+        # the sample() call itself is the real test. Say so loudly rather than
+        # guessing, so a genuinely card-less node is obvious in the log.
+        print(
+            "  WARNING: no /dev/ve* device is visible from this host. If sampling "
+            "fails, you are not on the VE node (ASU SOL: sfpga01n).",
+            flush=True,
+        )
     return VectorAnnealing
 
 
