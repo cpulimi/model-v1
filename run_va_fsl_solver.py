@@ -2750,6 +2750,14 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
         "va": {
             "engine": "NEC Vector Annealing",
             "manual_reference": VA_MANUAL_REF,
+            # Provenance: proves this run executed on a local VE card via the
+            # on-prem module, not through any cloud/service-client API.
+            "execution_mode": "local_ve_card",
+            "service_client_used": False,
+            "module_file": str(getattr(VectorAnnealing, "__file__", "") or ""),
+            "hostname": socket.gethostname(),
+            "ve_node_number": os.environ.get("VE_NODE_NUMBER"),
+            "ve_devices_visible": visible_ve_devices(),
             "module_version": next(
                 (
                     str(getattr(VectorAnnealing, a))
