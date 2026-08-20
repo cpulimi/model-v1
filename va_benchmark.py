@@ -364,7 +364,9 @@ def print_report(rows: list[dict[str, Any]], mode: str) -> None:
             for key, _ in keys:
                 try:
                     b, v = float(base.get(key)), float(r.get(key))
-                    cells += f"{(v / b if b else float('nan')):>10.2f}x"
+                    if b != b or v != v or not b:  # NaN or zero base -> not comparable
+                        raise ValueError
+                    cells += f"{v / b:>10.2f}x"
                 except (TypeError, ValueError):
                     cells += f"{'-':>11}"
             print(f"  {r['instance']:<14}{cells}")
