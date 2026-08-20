@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import math
 import subprocess
 import sys
 import time
@@ -319,7 +320,10 @@ def print_report(rows: list[dict[str, Any]], mode: str) -> None:
               f"{_n(r.get('num_x')):>5} {_n(r.get('binary_vars')):>12} {_n(r.get('interactions')):>13} "
               f"{_n(r.get('matrix_density'), '.5%'):>10} {_n(r.get('couplings_per_var'), '.1f'):>8}")
 
-    print("\n2. MEMORY  (VA allocates binary_vars^2 x 4B regardless of density)")
+    print("\n2. MEMORY  -- two different resources, do not add them up")
+    print("   VA dense / sparse equiv / waste = DEVICE side. What the VE card must hold:")
+    print("   binary_vars^2 x 4B, allocated regardless of how sparse the QUBO is.")
+    print("   RSS peak / tracemalloc     = HOST side. Python building the QUBO before transfer.")
     h = (f"  {'instance':<14} {'VA dense':>12} {'sparse equiv':>14} {'waste':>10} "
          f"{'RSS peak MB':>12} {'tracemalloc MB':>15}")
     print(h); print("  " + "-" * (len(h) - 2))
@@ -569,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
                   f"wall={_n(row.get('total_wall_seconds'), ',.2f')}s", flush=True)
 
     print_report(rows, cli.mode)
+    print_trend_analysis(rows, cli.mode)
 
     if cli.csv:
         Path(cli.csv).parent.mkdir(parents=True, exist_ok=True)
