@@ -243,29 +243,56 @@ def money(x: float | int | None) -> str:
     return f"${float(x):,.2f}"
 
 
-def peak_or_current_rss_mb() -> float:
-    """Best-effort peak or current RSS in MB, cross-platform."""
+def current_rss_mb() -> float:
+    """Current resident set size in MB, or 0.0 if it cannot be read."""
     if psutil is not None:
         try:
-            proc = psutil.Process()
-            if hasattr(proc, "memory_full_info"):
-                info = proc.memory_full_info()
-                peak = getattr(info, "peak_wset", None)  # Windows peak working set
-                if peak:
-                    return float(peak) / (1024.0 * 1024.0)
-            return float(proc.memory_info().rss) / (1024.0 * 1024.0)
+            return float(psutil.Process().memory_info().rss) / (1024.0 * 1024.0)
         except Exception:
             pass
+    return 0.0
 
+
+def peak_rss_mb() -> float:
+    """TRUE high-water-mark RSS in MB for this process.
+
+    getrusage(RUSAGE_SELF).ru_maxrss is a monotonic peak the kernel maintains,
+    so it survives the frees and gc between batches. psutil's memory_info().rss
+    is only the CURRENT value: because memory_report_mb() runs at the end of a
+    run, after the batch QUBOs have been freed, using it silently understated
+    peak memory by the size of the largest batch. On this workload memory is the
+    binding constraint (VA stores the problem densely), so that is the one
+    measurement that must not read low.
+
+    ru_maxrss is bytes on macOS and kilobytes on Linux. peak_wset is used on
+    Windows, where getrusage does not exist.
+    """
     try:
         import resource  # type: ignore
 
         usage = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        if sys.platform == "darwin":
-            return usage / (1024.0 * 1024.0)
-        return usage / 1024.0
+        if usage > 0:
+            return usage / (1024.0 * 1024.0) if sys.platform == "darwin" else usage / 1024.0
     except Exception:
-        return 0.0
+        pass
+
+    if psutil is not None:
+        try:
+            proc = psutil.Process()
+            info = proc.memory_full_info() if hasattr(proc, "memory_full_info") else None
+            peak = getattr(info, "peak_wset", None) if info is not None else None
+            if peak:
+                return float(peak) / (1024.0 * 1024.0)
+        except Exception:
+            pass
+
+    # No peak source available; current RSS is the best remaining estimate.
+    return current_rss_mb()
+
+
+def peak_or_current_rss_mb() -> float:
+    """Backwards-compatible alias. Returns the true peak where available."""
+    return peak_rss_mb()
 
 
 def memory_report_mb() -> tuple[float, float]:
