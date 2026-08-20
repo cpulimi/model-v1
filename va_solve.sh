@@ -37,27 +37,40 @@ source activate qubo 2>/dev/null || conda activate qubo 2>/dev/null || mamba act
 set -u
 
 # --- NEC Vector Annealing environment -------------------------------------
-# Per the NEC Vector Annealing PoC Manual, 2nd Edition (Nov 2022). That manual
-# documents the 2022 PoC release (VApoc_0201); the version installed here may
-# differ, so adjust these paths to match /opt/va and /opt/nec/ve on this node.
-NLC_VARS="${NLC_VARS:-/opt/nec/ve/nlc/2.3.0/bin/nlcvars.sh}"
-VA_PYTHON_DIR="${VA_PYTHON_DIR:-/opt/va/VApoc_0201/libexec/VectorAnnealing/python}"
+# The 2022 PoC manual documents release VApoc_0201, but SOL carries V3.0.0 (see
+# va_probe.py), so the install path is NOT hardcoded: pick the newest install
+# actually present on this node. Override by exporting VA_PYTHON_DIR/NLC_VARS.
+if [[ -z "${NLC_VARS:-}" ]]; then
+  NLC_VARS=$(ls -1d /opt/nec/ve/nlc/*/bin/nlcvars.sh 2>/dev/null | sort -V | tail -n1 || true)
+fi
+if [[ -z "${VA_PYTHON_DIR:-}" ]]; then
+  VA_PYTHON_DIR=$(ls -1d /opt/va/*/libexec/VectorAnnealing/python 2>/dev/null | sort -V | tail -n1 || true)
+fi
 
 set +u
-if [[ -f "$NLC_VARS" ]]; then
+if [[ -n "${NLC_VARS:-}" && -f "$NLC_VARS" ]]; then
   # shellcheck disable=SC1090
   source "$NLC_VARS"
 else
-  echo ">>> WARNING: $NLC_VARS not found; VA may fail to import." >&2
+  echo ">>> WARNING: no nlcvars.sh found under /opt/nec/ve/nlc/*; VA may fail to import." >&2
 fi
 set -u
 export PATH="${PATH}:/opt/nec/ve/bin"
-export PYTHONPATH="${VA_PYTHON_DIR}:${PYTHONPATH:-}"
+if [[ -n "${VA_PYTHON_DIR:-}" ]]; then
+  export PYTHONPATH="${VA_PYTHON_DIR}:${PYTHONPATH:-}"
+else
+  echo ">>> WARNING: no VA install found under /opt/va/*/libexec/VectorAnnealing/python." >&2
+  echo ">>>          Are you really on sfpga01n? Run: srun -w sfpga01n --pty bash -c 'ls -d /opt/va/*'" >&2
+fi
 
 echo ">>> host=$(hostname) project=$PROJECT python=$(which python)"
 echo ">>> python version: $(python --version 2>&1)"
+echo ">>> nlcvars=${NLC_VARS:-<none>}"
+echo ">>> VA_PYTHON_DIR=${VA_PYTHON_DIR:-<none>}"
 echo ">>> PYTHONPATH=$PYTHONPATH"
-# VE card inventory. Non-fatal if the tool is absent.
+# Local VE card inventory -- this is the hardware the QUBO executes on.
+echo ">>> VE device nodes visible here:"
+ls -1 /dev/veslot* /dev/ve[0-9]* 2>/dev/null || echo "    <none visible from this host>"
 if command -v /opt/nec/ve/bin/vecmd >/dev/null 2>&1; then
   /opt/nec/ve/bin/vecmd info || true
 fi
