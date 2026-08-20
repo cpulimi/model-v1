@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,9 @@ OPTIONAL_FILES = (
 # Any code cell containing this is the notebook's own execution cell; it would
 # run the batch a second time with hardcoded paths, so it is skipped.
 EXECUTION_CELL_MARKER = "run_batch(BATCH_CSV"
+
+# Name under which the notebook's cells are registered in sys.modules.
+NOTEBOOK_MODULE_NAME = "_fsl_notebook_generator"
 
 
 def extract_notebook_source(nb_path: Path) -> tuple[str, int, int]:
@@ -108,7 +112,13 @@ def load_notebook_namespace(nb_path: Path) -> dict[str, Any]:
 
 
 def resolve_default_anchor_file(namespace: dict[str, Any], project_root: Path) -> Path:
-    """Point DEFAULT_ANCHOR_CITY_FILE at a file that exists on this machine."""
+    """Point DEFAULT_ANCHOR_CITY_FILE at the project's anchor CSV when off Colab.
+
+    The notebook's value is the Colab path /content/default_anchor_cities.csv.
+    Off Colab that path does not exist, so the same file in the project root is
+    used instead. Only the path is rewritten -- the file's contents are the
+    project's own default_anchor_cities.csv, untouched.
+    """
     declared = str(namespace.get("DEFAULT_ANCHOR_CITY_FILE", ""))
     if declared and Path(declared).is_file():
         print(f"  anchor default:   {declared} (notebook value, exists)")
@@ -117,16 +127,14 @@ def resolve_default_anchor_file(namespace: dict[str, Any], project_root: Path) -
     local = project_root / "default_anchor_cities.csv"
     if not local.is_file():
         raise SystemExit(
-            f"ERROR: the notebook's DEFAULT_ANCHOR_CITY_FILE is {declared!r}, which does\n"
-            f"       not exist here, and there is no fallback at {local}.\n"
-            "       Every batch row leaves 'anchor_city_file' blank, so generation cannot\n"
-            "       proceed without it. Create default_anchor_cities.csv with columns\n"
-            "       anchor_id,city,lat,lon,region_code (one row per candidate hub city)."
+            f"ERROR: neither the notebook's DEFAULT_ANCHOR_CITY_FILE ({declared!r})\n"
+            f"       nor {local} exists. Every batch row leaves 'anchor_city_file'\n"
+            "       blank, so there is nothing to fall back to."
         )
 
     namespace["DEFAULT_ANCHOR_CITY_FILE"] = str(local)
     print(f"  anchor default:   {local}")
-    print(f"                    (notebook value {declared!r} is a Colab path and is absent here)")
+    print(f"                    (notebook value {declared!r} is a Colab path; using the project copy)")
     return local
 
 
