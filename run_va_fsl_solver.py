@@ -1885,6 +1885,19 @@ def print_batch_plan(plan: list[dict[str, Any]], args: argparse.Namespace) -> No
             f"across {len(plan):,} batch(es)",
             flush=True,
         )
+        # Density is the whole argument for why the ceiling bites: VA allocates
+        # total_vars^2 cells whatever the coupling structure looks like.
+        worst_density = min(r["matrix_density"] for r in plan)
+        worst_waste = max(r["dense_waste_factor"] for r in plan)
+        dense_total = sum(r["dense_matrix_bytes"] for r in plan)
+        sparse_total = sum(r["sparse_equivalent_bytes"] for r in plan)
+        print(
+            f"  matrix density: {worst_density:.6%} at its sparsest | "
+            f"avg couplings/var {max(r['avg_couplings_per_var'] for r in plan):.1f} | "
+            f"VA dense {human_bytes(dense_total)} vs sparse-equivalent {human_bytes(sparse_total)} "
+            f"({worst_waste:,.0f}x more memory than the couplings need)",
+            flush=True,
+        )
         max_offset = max(r["qubo_offset"] for r in plan)
         print(
             f"  largest to_qubo offset (the C1 constant): {max_offset:,.2f} "
