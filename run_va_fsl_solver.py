@@ -2433,7 +2433,7 @@ def print_va_header(
     print(f"  total QUBO batches:       {len(batches):,}", flush=True)
     print(f"  max Z vars/batch:         {args.max_z_vars_per_batch:,}", flush=True)
     print(f"  VA max total vars/batch:  {args.va_max_vars_per_batch:,}", flush=True)
-    print(f"  formulation:              pyqubo Binary + Placeholder -> compile().to_qubo()", flush=True)
+    print("  formulation:              pyqubo Binary + Placeholder -> compile().to_qubo()", flush=True)
     print(
         f"  to_qubo offset:           "
         f"{'passed to VectorAnnealing.model()' if args.va_include_offset else 'held out of VA (default); recorded in the CSVs'}",
