@@ -5,12 +5,16 @@
 # (run_aligned_fsl_comparison.py --solver qubo); only the sampler changes.
 # Results land in $RUN_ROOT/va, a sibling of the existing qubo/ and gurobi/ dirs.
 #
-# !!! NODE NAME NOT YET VERIFIED !!!
-# The VE (Vector Engine) node name and partition below are a best guess.
-# Confirm BOTH before submitting:
-#     sinfo -p fpga -N -l
-# and adjust -w / -p to whatever that reports. Submitting with a wrong -w
-# will sit PENDING forever with ReqNodeNotAvail.
+# EXECUTION TARGET: the physical NEC Vector Engine card on ASU SOL's sfpga01n.
+# This runs the QUBO on local hardware through the on-prem VectorAnnealing
+# module. There is no cloud path: no SACServiceClient, no REST endpoint, no
+# credentials anywhere in this pipeline. pyqubo is the modeling layer only.
+#
+# Node sfpga01n is confirmed. The PARTITION below is still inferred from the
+# node name -- confirm it once with:
+#     sinfo -N -n sfpga01n -o '%N %P %t %f'
+# and correct -p if that reports something other than 'fpga'. A wrong -p (or -w)
+# leaves the job PENDING forever with ReqNodeNotAvail.
 #SBATCH -w sfpga01n
 #SBATCH -p fpga
 #SBATCH --mem=0
