@@ -1723,6 +1723,47 @@ def import_vector_annealing() -> Any:
 # ---------------------------------------------------------------------------
 
 
+def qubo_density_stats(Q: dict[tuple[str, str], float], num_vars: int) -> dict[str, float]:
+    """How much of VA's dense matrix is actually non-zero.
+
+    VA allocates and processes a full num_vars x num_vars matrix regardless of
+    how sparse the QUBO is, so this quantifies the cost of that choice:
+    `dense_waste_factor` is how many times more memory VA needs than a sparse
+    representation of the same problem would. On this model the couplings are
+    local (Z-Z only within a demand row, Z-Y and Y-X only along the hub/part it
+    belongs to), so density falls quadratically as the instance grows and the
+    waste factor climbs fast. That -- not the variable count -- is what puts the
+    100,000-bit ceiling out of reach.
+
+    Counting: Q holds one key per unique pair, so off-diagonal entries appear
+    once but occupy two cells of the symmetric matrix.
+    """
+    n = int(num_vars)
+    diagonal = sum(1 for u, v in Q if u == v)
+    off_diagonal = len(Q) - diagonal
+    nonzero_cells = 2 * off_diagonal + diagonal
+    total_cells = n * n
+    density = (float(nonzero_cells) / float(total_cells)) if total_cells else 0.0
+    dense_bytes = dense_matrix_bytes(n)
+    # A sparse store needs the value plus its coordinates; 4B value + 2x4B index
+    # is the optimistic floor, which keeps the waste factor conservative.
+    sparse_bytes = len(Q) * (VA_DENSE_BYTES_PER_ENTRY + 8)
+    return {
+        "num_vars": float(n),
+        "interactions": float(len(Q)),
+        "diagonal_terms": float(diagonal),
+        "off_diagonal_terms": float(off_diagonal),
+        "nonzero_cells": float(nonzero_cells),
+        "total_cells": float(total_cells),
+        "matrix_density": float(density),
+        "matrix_sparsity": float(1.0 - density),
+        "avg_couplings_per_var": (float(2 * off_diagonal) / float(n)) if n else 0.0,
+        "dense_matrix_bytes": float(dense_bytes),
+        "sparse_equivalent_bytes": float(sparse_bytes),
+        "dense_waste_factor": (float(dense_bytes) / float(sparse_bytes)) if sparse_bytes else float("inf"),
+    }
+
+
 def dense_matrix_bytes(num_vars: int) -> int:
     """VA stores the problem as a dense matrix; QUBO sparsity does not help.
 
