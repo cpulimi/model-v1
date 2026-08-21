@@ -47,7 +47,16 @@ def load_summaries(run_root: Path) -> list[tuple[str, dict[str, Any]]]:
             out.append((instance, json.loads(path.read_text())))
         except Exception as exc:
             print(f"  WARNING: could not read {path}: {exc}", file=sys.stderr)
-    return out
+
+    # Order by problem size, not by name -- alphabetically "instances_100hubs"
+    # sorts before "instances_10hubs", which makes every table read backwards.
+    def size_key(item: tuple[str, dict[str, Any]]) -> tuple[int, str]:
+        nvars = g(item[1], "extra", "performance", "binary_variables")
+        if nvars is None:
+            nvars = g(item[1], "dataset", "hubs", default=0)
+        return (int(nvars or 0), item[0])
+
+    return sorted(out, key=size_key)
 
 
 def g(d: dict[str, Any], *path: str, default: Any = None) -> Any:
