@@ -52,13 +52,19 @@ true Hamiltonian value.
 
 DELIBERATE SCOPE NOTES
 ----------------------
-* No seeding. The VA PoC API exposes no seed parameter, so VA runs are not
-  reproducible read-for-read. Use --va-repeats N to characterize the spread
-  instead; per-repeat statistics land in va_batch_summary.csv.
+* Seeding IS available. The 2022 PoC manual documents no seed, but V3.0.0's
+  sampler.sample() accepts one, confirmed by va_probe.py on SOL. Pass --va-seed
+  for reproducible reads; omit it for unseeded runs (the default, preserving the
+  original behaviour). --va-repeats N still characterizes spread, and combines
+  with --va-seed to make that spread reproducible.
+* vector_mode and precision take MODULE CONSTANTS in V3.0.0
+  (VectorAnnealing.VECTOR_MODE_*, PRECISION_COMPUTE_*), not the plain strings
+  the PoC manual implied. The CLI takes the bare name and resolves it, failing
+  loudly with the install's actual list if a name is missing.
 * Adaptive penalty IS implemented, and is ON by default: rebuild the QUBO with
   grown multipliers for violated constraints, resample, repeat until feasible.
-  The seed line the OpenJij loop carries is dropped, since VA has no seed and
-  the escalation never depended on one. It is on by default because with
+  The escalation is seed-independent; pass --va-seed if you want the whole
+  loop reproducible. It is on by default because with
   objective scale OFF, C3's penalty starts at 50,000 against an S_lim of
   500,000, so stocking at a closed hub is initially 10x cheaper than opening
   one; only the escalation corrects that.
@@ -1643,6 +1649,21 @@ def visible_ve_devices() -> list[str]:
     return sorted(set(devices))
 
 
+def ve_card_count() -> int:
+    """Number of distinct PHYSICAL cards, not device nodes.
+
+    One card shows up under several names -- /dev/veslot0 and /dev/ve0 are the
+    same hardware -- so counting nodes double-counts it and invites a bogus
+    "N cards, run batches in parallel" conclusion. Dedupe on the trailing index.
+    """
+    indices: set[str] = set()
+    for dev in visible_ve_devices():
+        digits = "".join(ch for ch in os.path.basename(dev) if ch.isdigit())
+        if digits:
+            indices.add(digits)
+    return len(indices)
+
+
 def import_vector_annealing() -> Any:
     """Import the local VectorAnnealing module, or exit with actionable guidance.
 
@@ -1701,8 +1722,9 @@ def import_vector_annealing() -> Any:
     print(f"  python:          {sys.version.splitlines()[0]}", flush=True)
     print(f"  hostname:        {socket.gethostname()}", flush=True)
     print(f"  VE_NODE_NUMBER:  {os.environ.get('VE_NODE_NUMBER', '<unset>')}", flush=True)
+    cards = ve_card_count()
     print(
-        f"  VE devices:      {len(devices)} card(s) visible"
+        f"  VE devices:      {len(devices)} device node(s) = {cards} card(s)"
         + (f" -> {', '.join(devices)}" if devices else " -> NONE"),
         flush=True,
     )
@@ -2031,6 +2053,35 @@ def build_one_hot_list(qubo_meta: dict[str, Any]) -> list[list[str]]:
     return groups
 
 
+def _resolve_va_constant(VectorAnnealing: Any, prefix: str, name: str, flag: str) -> Any:
+    """Map a CLI name onto a VectorAnnealing module constant.
+
+    V3.0.0's sample() takes MODULE CONSTANTS for vector_mode and precision, not
+    the strings "ACCURACY"/"SPEED" the 2022 PoC manual implied. Passing a string
+    is silently wrong at best. Resolved by name so a version that renames or
+    drops a mode fails loudly here, listing what this install actually offers,
+    rather than misbehaving inside the anneal.
+    """
+    attr = f"{prefix}{name}"
+    value = getattr(VectorAnnealing, attr, None)
+    if value is None:
+        available = sorted(a for a in dir(VectorAnnealing) if a.startswith(prefix))
+        raise SystemExit(
+            f"{flag}={name!r} maps to VectorAnnealing.{attr}, which this install "
+            f"does not define.\n  Available: "
+            + ", ".join(a[len(prefix):] for a in available)
+        )
+    return value
+
+
+def resolve_vector_mode(VectorAnnealing: Any, name: str) -> Any:
+    return _resolve_va_constant(VectorAnnealing, "VECTOR_MODE_", name, "--va-vector-mode")
+
+
+def resolve_precision(VectorAnnealing: Any, name: str) -> Any:
+    return _resolve_va_constant(VectorAnnealing, "PRECISION_COMPUTE_", name, "--va-precision")
+
+
 def va_sample_once(
     VectorAnnealing: Any,
     Q: dict[tuple[str, str], float],
@@ -2039,11 +2090,15 @@ def va_sample_once(
     one_hot_list: list[list[str]] | None,
     beta_range: list[float] | None,
     offset: float,
+    seed: int | None = None,
 ) -> tuple[list[Any], float]:
     """One VectorAnnealing.sample() call. Returns (results, wall seconds).
 
     `offset` is the constant pyqubo's to_qubo() returned, or 0.0 when
     --va-include-offset is not set (the default -- see the module docstring).
+
+    `seed` is passed through when not None. V3.0.0's sample() DOES accept a
+    seed, contrary to the 2022 PoC manual; see --va-seed.
     """
     model_kwargs: dict[str, Any] = {}
     if one_hot_list:
@@ -2057,12 +2112,16 @@ def va_sample_once(
         # None/1 returns a single best solution; num_results == num_reads
         # returns every annealing result, which the precision audit needs.
         "num_results": int(num_reads),
-        "vector_mode": str(args.va_vector_mode),
+        "vector_mode": resolve_vector_mode(VectorAnnealing, str(args.va_vector_mode)),
     }
+    if getattr(args, "va_precision", ""):
+        sample_kwargs["precision"] = resolve_precision(VectorAnnealing, str(args.va_precision))
     if int(args.num_sweeps or 0) > 0:
         sample_kwargs["num_sweeps"] = int(args.num_sweeps)
     if beta_range is not None:
         sample_kwargs["beta_range"] = beta_range
+    if seed is not None:
+        sample_kwargs["seed"] = int(seed)
 
     t0 = time.perf_counter()
     result = sampler.sample(va_model, **sample_kwargs)
@@ -2082,6 +2141,7 @@ def va_sample_with_retries(
     beta_range: list[float] | None,
     label: str,
     offset: float,
+    seed: int | None = None,
 ) -> tuple[list[Any], float, int, int]:
     """Sample until VA returns something usable.
 
@@ -2097,8 +2157,13 @@ def va_sample_with_retries(
 
     for attempt in range(1, int(args.va_max_retries) + 2):
         attempts_used = attempt
+        # Vary the seed per attempt: a retry exists because every read came back
+        # with a broken constraint, so repeating the identical anneal would just
+        # reproduce it. None stays None (unseeded).
+        attempt_seed = None if seed is None else int(seed) + attempt - 1
         results, elapsed = va_sample_once(
-            VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range, offset
+            VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range, offset,
+            seed=attempt_seed,
         )
         seconds += elapsed
 
@@ -2141,8 +2206,8 @@ def solve_va_batch(
     With --adaptive-penalty-mode within-batch: re-feed the pyqubo Placeholders
     with grown multipliers for whichever constraints are still violated,
     resample, repeat until feasible or the iteration budget runs out. The batch
-    is compiled once; iterations only call to_qubo() again. There is no seed
-    line -- VA has no seed parameter, and the escalation never depended on one.
+    is compiled once; iterations only call to_qubo() again. Seeding is optional
+    (--va-seed); the escalation never depended on it either way.
 
     This matters most with objective scale OFF: C3's penalty starts at
     --min-penalty (50,000) while S_lim is 500,000, so stocking at a closed hub
@@ -2279,8 +2344,16 @@ def solve_va_batch(
         iter_evals: list[dict[str, Any]] = []
         for repeat in range(1, int(args.va_repeats) + 1):
             label = f"iter {iteration} repeat {repeat}" if adaptive else f"repeat {repeat}"
+            # Distinct seed per (batch, iteration, repeat) so repeats explore
+            # differently while the whole run stays reproducible. Mirrors the
+            # OpenJij path's seed + batch_id * 1000 + stage scheme.
+            repeat_seed = (
+                None if args.va_seed is None
+                else int(args.va_seed) + batch.batch_id * 100_000 + iteration * 1_000 + repeat
+            )
             results, seconds, attempts_used, retries = va_sample_with_retries(
-                VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range, label, va_offset
+                VectorAnnealing, Q, args, base_reads, one_hot_list, beta_range, label,
+                va_offset, seed=repeat_seed,
             )
             sample_seconds += seconds
             total_sample_calls += attempts_used
@@ -2384,8 +2457,8 @@ def solve_va_batch(
         )
 
         # The OpenJij adaptive_iteration_log_dataframe schema, so both paths'
-        # logs can be concatenated. seed_used is None: VA has no seed parameter,
-        # but the column is kept so the CSVs line up.
+        # logs can be concatenated. seed_used is the run's base seed, or None
+        # when --va-seed was not given.
         log_row: dict[str, Any] = {
             "batch_id": int(batch.batch_id),
             "iteration": int(iteration),
@@ -2395,7 +2468,7 @@ def solve_va_batch(
             "energy": float(iter_best["energy"]),
             "num_vars": int(total_vars),
             "num_interactions": int(len(Q)),
-            "seed_used": None,
+            "seed_used": (None if args.va_seed is None else int(args.va_seed)),
             "num_reads": int(base_reads),
             "qubo_offset": float(offset),
             "exit_reason": "",
@@ -2657,7 +2730,10 @@ def print_va_header(
     print(f"    num_reads (base):       {args.num_reads}", flush=True)
     print(f"    num_sweeps:             {args.num_sweeps}", flush=True)
     print(f"    beta_range:             {args.va_beta_range or 'VA default [10,100,200]'}", flush=True)
-    print(f"    repeats:                {args.va_repeats}  (no seed parameter exists in VA)", flush=True)
+    print(f"    repeats:                {args.va_repeats}", flush=True)
+    print(f"    seed:                   "
+          f"{args.va_seed if args.va_seed is not None else 'unseeded'}", flush=True)
+    print(f"    precision:              {args.va_precision or 'VA default'}", flush=True)
     print(f"    max constraint retries: {args.va_max_retries}", flush=True)
     print(f"    onehot flip option:     {'ON' if args.va_onehot else 'OFF'}", flush=True)
     print(f"  penalty mode:             {args.penalty_mode}", flush=True)
@@ -2895,6 +2971,7 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
             "hostname": socket.gethostname(),
             "ve_node_number": os.environ.get("VE_NODE_NUMBER"),
             "ve_devices_visible": visible_ve_devices(),
+            "ve_card_count": int(ve_card_count()),
             "module_version": next(
                 (
                     str(getattr(VectorAnnealing, a))
@@ -2915,8 +2992,16 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
                      "comparable to the run_aligned_fsl_comparison_noscale.py arm, NOT to "
                      "scale-ON OpenJij baselines"
             ),
-            "seeded": False,
-            "seed_note": "The VA PoC API exposes no seed parameter; runs are not reproducible read-for-read.",
+            "seeded": bool(args.va_seed is not None),
+            "seed": (None if args.va_seed is None else int(args.va_seed)),
+            "seed_note": (
+                "VA V3.0.0's sample() accepts a seed (the 2022 PoC manual said otherwise). "
+                "Seeded: reads are reproducible for a fixed seed, instance and budget."
+                if args.va_seed is not None else
+                "Unseeded run: --va-seed was not passed, so reads are not reproducible. "
+                "V3.0.0 does support seeding."
+            ),
+            "precision": (str(args.va_precision) or "VA default"),
             "adaptive_penalty_mode": str(args.adaptive_penalty_mode),
             "adaptive_penalty_iterations_max": int(args.adaptive_penalty_iterations),
             "adaptive_penalty_growth": float(args.adaptive_penalty_growth),
@@ -3095,13 +3180,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     va.add_argument("--va-max-vars-per-batch", type=int, default=60000,
                     help=f"Ceiling on TOTAL vars per batch (Z+Y+X). VA hard max is {VA_HARD_MAX_VARS:,}.")
     va.add_argument("--va-repeats", type=int, default=1,
-                    help="Re-run each batch N times and record the distribution. VA has no seed parameter.")
+                    help="Re-run each batch N times and record the distribution. Combine with "
+                         "--va-seed for a spread that is reproducible run to run.")
     va.add_argument("--va-max-retries", type=int, default=3,
                     help="Retries when VA returns a broken constraint on every read of a call.")
     va.add_argument("--va-onehot", action="store_true",
                     help="Declare C1 as VA one-hot flip groups. C1 penalty terms stay in the Hamiltonian.")
-    va.add_argument("--va-vector-mode", choices=["SPEED", "ACCURACY"], default="ACCURACY",
-                    help="VA vector_mode.")
+    va.add_argument("--va-vector-mode",
+                    choices=["SPEED", "ACCURACY", "ACCURACY_V1_0", "ACCURACY_V3_0",
+                             "CONSTRAINT", "CONSTRAINT_ONLY"],
+                    default="ACCURACY",
+                    help="VA vector_mode. Resolved to the VectorAnnealing.VECTOR_MODE_* "
+                         "module constant of the same name -- V3.0.0 requires the constant, "
+                         "not the string. CONSTRAINT/CONSTRAINT_ONLY are V3 modes that "
+                         "prioritise feasibility; untested against this model.")
+    va.add_argument("--va-precision", choices=["", "SINGLE", "DOUBLE"], default="",
+                    help="VA precision (PRECISION_COMPUTE_*). Empty leaves it at the VA "
+                         "default. DOUBLE tests the fp32 question directly rather than "
+                         "inferring it from the float64 recompute audit.")
+    va.add_argument("--va-seed", type=int, default=None,
+                    help="Base seed for VA sampling. V3.0.0's sample() DOES accept a seed, "
+                         "contrary to the 2022 PoC manual. Each (batch, iteration, repeat) "
+                         "gets seed + batch*100000 + iter*1000 + repeat, and each retry "
+                         "bumps it again. Omit for unseeded runs.")
     va.add_argument("--va-beta-range", default="",
                     help="VA beta_range as 'start,end[,nsteps]'. Empty uses the VA default [10,100,200].")
     va.add_argument("--va-include-offset", action="store_true",
