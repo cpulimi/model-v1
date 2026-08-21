@@ -1,3 +1,12 @@
+# Data generation (kept local only -- pulling these onto SOL breaks `git pull`
+# when the node already has its own untracked copies). The generated datasets
+# themselves ARE tracked, as instances_*hubs/ and instances_low|medium|high/.
+# scripts/git-sync-once.sh runs `git add -A`, so without these rules the auto
+# sync watcher would put them straight back.
+data_generation_V7.ipynb
+default_anchor_cities.csv
+latam_anchor_cities.csv
+
 # Run artifacts (large; regenerate from scripts)
 outputs/
 outputs.zip
