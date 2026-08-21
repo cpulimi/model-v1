@@ -45,8 +45,15 @@
 # leaves the job PENDING forever with ReqNodeNotAvail.
 #SBATCH -w sfpga01n
 #SBATCH -p fpga
-#SBATCH --mem=0
-#SBATCH --exclusive
+# NOT --exclusive / --mem=0. The fpga partition has one node, and an
+# interactive session on it (an OnDemand VS Code job, or your own srun shell)
+# is enough to make a whole-node request unschedulable forever -- squeue shows
+# PD (Resources) and nothing ever starts. Nothing here needs the whole node:
+# the VS Code server does not touch the Vector Engine, and the solve array is
+# throttled to %1 so only one job uses the card at a time. Request what the
+# process actually uses instead.
+#SBATCH -c 8
+#SBATCH --mem=64G
 #SBATCH -t 0-04:00:00
 #SBATCH -J va_solve
 #SBATCH -o logs/%x_%j.out
