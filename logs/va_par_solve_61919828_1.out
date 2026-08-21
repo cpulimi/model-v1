@@ -1,0 +1,11 @@
+>>> batch 1 of run va_10 (instances_10hubs)
+>>> mode=solve run_root=/home/cpulimi/ModelV1/model-v1/results/va_parallel/va_10
+
+============================================================================
+VA PARALLEL SOLVE - batch 1/1
+============================================================================
+  dataset:      instances_10hubs
+  demand rows:  3,207
+  est Z vars:   3,207
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/va_parallel/va_10/parallel_work
+============================================================================

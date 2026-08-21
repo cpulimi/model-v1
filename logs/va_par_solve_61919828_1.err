@@ -1,0 +1,24 @@
+/var/spool/slurmd/job61919828/slurm_script: line 36: /var/spool/slurmd/job61919828/va_env.sh: No such file or directory
+============================================================================
+ERROR: could not import VectorAnnealing.
+  underlying error: ModuleNotFoundError: No module named 'VectorAnnealing'
+
+  Source the VA environment and put the VA python dir on PYTHONPATH:
+    source /opt/nec/ve/nlc/<ver>/bin/nlcvars.sh
+    export PATH=${PATH}:/opt/nec/ve/bin
+
+  VA installs found on this host (/opt/va/*/libexec/VectorAnnealing/python):
+    export PYTHONPATH=/opt/va/V3.0.0/libexec/VectorAnnealing/python:${PYTHONPATH}
+
+  active python:   /home/cpulimi/.conda/envs/qubo/bin/python3
+  python version:  3.11.15 | packaged by conda-forge | (main, Mar  5 2026, 16:45:40) [GCC 14.3.0]
+  hostname:        sfpga01n
+  PYTHONPATH:      /etc/python
+  VE devices:      ['/dev/ve0', '/dev/veslot0']
+
+  This solver does not fall back to any other sampler, and has no
+  cloud/service-client path. Run va_probe.py on the VE node to inspect
+  the installed module, or --dry-run to validate the batch plan with
+  no card at all.
+============================================================================
+/var/spool/slurmd/job61919828/slurm_script: line 70: va_slurm_mem: command not found

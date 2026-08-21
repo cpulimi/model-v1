@@ -1,0 +1,30 @@
+{
+  "run_name": "va_10",
+  "dataset_name": "instances_10hubs",
+  "total_batches": 1,
+  "batch_ids": [
+    1
+  ],
+  "batching_signature": {
+    "dataset_dir": "instances_10hubs",
+    "max_service_miles": null,
+    "penalty_start_miles": null,
+    "top_hubs_per_zip": -1,
+    "max_parts_total": -1,
+    "part_batch_size": 1000,
+    "max_z_vars_per_batch": 40000
+  },
+  "max_batch_vars": 4397,
+  "va_max_vars_per_batch": 60000,
+  "batches": [
+    {
+      "batch_id": 1,
+      "num_rows": 3207,
+      "num_z": 3207,
+      "num_y": 1180,
+      "num_x": 10,
+      "total_vars": 4397,
+      "dense_matrix_bytes": 77334436
+    }
+  ]
+}

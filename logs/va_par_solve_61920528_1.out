@@ -1,0 +1,40 @@
+>>> conda env: qubo
+>>> host        sfpga01n
+>>> python      /packages/apps/mamba/2.6.2/bin/python3 -- Python 3.13.13
+>>> VA dir      /opt/va/V3.0.0/libexec/VectorAnnealing/python
+>>> VE devices  /dev/ve0 /dev/veslot0 
+>>> interpreter OK
+>>> batch 1 of run va_10hubs (instances_10hubs)
+>>> mode=solve run_root=/home/cpulimi/ModelV1/model-v1/results/va_parallel/va_10hubs
+
+============================================================================
+VA PARALLEL SOLVE - batch 1/1
+============================================================================
+  dataset:      instances_10hubs
+  demand rows:  3,207
+  est Z vars:   3,207
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/va_parallel/va_10hubs/parallel_work
+============================================================================
+VectorAnnealing imported (local on-prem module; no service client).
+  module file:     /opt/va/V3.0.0/libexec/VectorAnnealing/python/VectorAnnealing/__init__.py
+  module version:  <module exposes no version attribute>
+  python:          3.13.13 | packaged by conda-forge | (main, Apr  8 2026, 02:00:33) [GCC 14.3.0]
+  hostname:        sfpga01n
+  VE_NODE_NUMBER:  <unset>
+  VE devices:      2 device node(s) = 1 card(s) -> /dev/ve0, /dev/veslot0
+
+=== VA Batch 1 | 149 parts | 3,207 demand rows | estimated Z=3,207 ===
+  [1/3] Formulating and compiling the PyQUBO model...
+    built in 0.25s (pyqubo expression 0.20s + compile 0.02s) | Z=3,207 Y=1,180 X=10 total_vars=4,397 interactions=8,784
+    penalties: C1=50,000.00 C2=50,000.00 C3=50,000.00
+    to_qubo offset (C1 constant): 160,350,000.00 -> held at 0.0 for VA (fp32 headroom + OpenJij comparability)
+  [2/3] Sampling with VectorAnnealing | reads=100 sweeps=3000 vector_mode=ACCURACY beta_range=VA default [10,100,200] | repeats=1 | adaptive=within-batch (max 8 iters, growth 1.5)
+    adaptive iter 1/8 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | penalties C1=50,000 C2=50,000 C3=50,000 | offset=160,350,000
+    iter 1 repeat 1 attempt 1: 100 reads in 617.64s | constraint satisfied 100/100
+    iter 1 repeat 1 | energy min/med/max = -154,851,056.82 / -154,851,056.82 / -154,851,056.82 | cost min/med/max = 5,498,943.18 / 5,498,943.18 / 5,498,943.18 | structurally feasible reads 100/100
+    adaptive feasible at iter 1
+  [3/3] Batch selected | OK | aligned cost=$5,498,943.18 | total_time=620.76s
+    matrix: density=0.068125% (13,171 non-zero of 19,333,609 cells) | avg couplings/var=2.0 | VA dense alloc 73.8 MiB vs sparse 102.9 KiB (734x)
+
+  saved batch 1 -> batch_0001.pkl | solve=620.87s rss_peak=253.6 MB | raw violations=0
+>>> slurm mem: batch1 MaxRSS= MaxVMSize= ReqMem= Elapsed=
