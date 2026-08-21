@@ -30,3 +30,11 @@ VectorAnnealing imported (local on-prem module; no service client).
     to_qubo offset (C1 constant): 299,800,000.00 -> held at 0.0 for VA (fp32 headroom + OpenJij comparability)
   [2/3] Sampling with VectorAnnealing | reads=112 sweeps=3000 vector_mode=ACCURACY beta_range=VA default [10,100,200] | repeats=1 | adaptive=within-batch (max 8 iters, growth 1.5)
     adaptive iter 1/8 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | penalties C1=50,000 C2=50,000 C3=50,000 | offset=299,800,000
+    iter 1 repeat 1 attempt 1: 112 reads in 1597.39s | constraint satisfied 112/112
+    iter 1 repeat 1 | energy min/med/max = -288,815,457.78 / -288,814,104.94 / -288,813,261.25 | cost min/med/max = 10,984,542.22 / 10,985,895.06 / 10,986,738.75 | structurally feasible reads 112/112
+    adaptive feasible at iter 1
+  [3/3] Batch selected | OK | aligned cost=$10,984,542.22 | total_time=1604.26s
+    matrix: density=0.035300% (26,467 non-zero of 74,978,281 cells) | avg couplings/var=2.1 | VA dense alloc 286.0 MiB vs sparse 205.8 KiB (1,423x)
+
+  saved batch 1 -> batch_0001.pkl | solve=1604.51s rss_peak=480.7 MB | raw violations=0
+>>> slurm mem: batch1 MaxRSS= MaxVMSize= ReqMem= Elapsed=

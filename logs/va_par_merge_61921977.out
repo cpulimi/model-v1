@@ -1,0 +1,47 @@
+>>> conda env: qubo
+>>> host        scc012
+>>> python      /packages/apps/mamba/2.6.2/bin/python3 -- Python 3.13.13
+>>> VA dir      <none found under /opt/va/*>
+>>> VE devices  none
+>>> interpreter OK
+>>> mode=merge run_root=/home/cpulimi/ModelV1/model-v1/results/va_parallel/va_20hubs
+
+############################################################################################
+VA FLOAT32 PRECISION AUDIT
+############################################################################################
+  VA computes in single precision; recomputed_energy is the float64 host reference.
+  reads audited:            112
+  MAX  |rel_diff|:          0.000000e+00
+  MEDIAN |rel_diff|:        0.000000e+00
+  max  |abs_diff|:          0.0000
+  median |abs_diff|:        0.0000
+
+  Read this against your cost scale: an |abs_diff| larger than the cost
+  differences you care about means VA cannot rank those solutions.
+  detail CSV:               va_precision_audit.csv
+############################################################################################
+============================================================================
+VA FINAL RESULTS (PARALLEL MERGE)
+============================================================================
+  total cost:                 $10,984,330.07
+  inventory cost:             $419,491.85
+  fixed open-hub cost:        $10,000,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $35,800.00
+  assignment transport cost:  $529,038.22
+  open hubs:                  20
+  closed hubs:                0
+  stocked hub-part pairs:     2,341
+  hub-zip-part pairings:      5,996
+  structural violations:      0
+  SLA distance violations:    943
+  wall time:                  1,604.98s
+  peak/current memory:        114.5/13.2 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/va_parallel/va_20hubs/va
+============================================================================
+
+  merged 1 batch(es) | solve total 1,604.5s + merge 0.5s (postprocess 0.1s)
+  outputs -> /home/cpulimi/ModelV1/model-v1/results/va_parallel/va_20hubs/va
+>>> slurm mem: merge MaxRSS= MaxVMSize= ReqMem= Elapsed=
+>>> final outputs in results/va_parallel/va_20hubs/va/
+>>> read them with: python3 va_results.py --run-root results/va_parallel
