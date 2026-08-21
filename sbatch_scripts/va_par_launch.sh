@@ -51,12 +51,22 @@ export VA_HUB_PRUNE_ITERS="${VA_HUB_PRUNE_ITERS:-500}"
 # Concurrent solve tasks. 1 because there is one card; raise only if a probe
 # ever shows genuinely independent Vector Engines.
 CONCURRENCY="${VA_CONCURRENCY:-1}"
+# Optional --dependency for the SOLVE array. The %N throttle above is PER
+# ARRAY, so two launches (say 20hubs and 50hubs) would each be allowed one
+# running task and both would drive the single VE at once. Chain them instead:
+#   VA_SOLVE_DEPEND=singleton        -- queue behind any other va_par_solve of
+#                                       yours, however it was submitted
+#   VA_SOLVE_DEPEND=afterany:123456  -- start after that specific array ends
+# Only solve needs this. Split runs here on the login node and merge runs on
+# a normal partition, so those may overlap freely.
+VA_SOLVE_DEPEND="${VA_SOLVE_DEPEND:-}"
 
 echo ">>> project   $PROJECT"
 echo ">>> dataset   $VA_DATASET"
 echo ">>> run name  $VA_RUN_NAME"
 echo ">>> outdir    $VA_OUTDIR"
 echo ">>> seed      ${VA_SEED:-<unseeded>}"
+echo ">>> depend    ${VA_SOLVE_DEPEND:-<none>}"
 
 # --- 1) split, here on the login node -------------------------------------
 # No card needed, so this does not queue. It also fails fast: if a batch is over
@@ -85,8 +95,12 @@ echo ">>> $N batch(es) to solve"
 
 # --- 2) solve array on the card -------------------------------------------
 SOLVE_ID=$(sbatch --parsable --array=1-"$N"%"$CONCURRENCY" \
+  ${VA_SOLVE_DEPEND:+--dependency="$VA_SOLVE_DEPEND"} \
   "$PROJECT/sbatch_scripts/va_par_solve.sh")
 echo ">>> [2/3] solve array submitted: job $SOLVE_ID (tasks 1-$N, $CONCURRENCY at a time)"
+if [[ -n "$VA_SOLVE_DEPEND" ]]; then
+  echo ">>>       held until dependency satisfied: $VA_SOLVE_DEPEND"
+fi
 
 # --- 3) dependent merge, off the card -------------------------------------
 MERGE_ID=$(sbatch --parsable --dependency=afterok:"$SOLVE_ID" \
