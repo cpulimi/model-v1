@@ -1,0 +1,2 @@
+C,h_s,h_d,d_s,L,S_lim,S_var,lambda_1,lambda_2,lambda_3,base_miles,penalty_start_miles,max_service_miles
+50.0,0.6,0.6,110.0,50000.0,500000.0,12.0,1.0,1.0,0.25,20.0,130.0,180.0

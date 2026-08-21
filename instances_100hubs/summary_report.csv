@@ -1,0 +1,2 @@
+instance_name,schema_version,seed,anchor_city_file,anchor_city_count,n_hubs_requested,n_hubs_generated,n_hubs,n_zips,n_parts,n_demand_rows,n_distance_rows,within_penalty_start_share,within_max_service_share,avg_eligible_hubs_per_zip
+fsl_100_hubs,1.0.0,100,/Users/chetanpulimi/.gemini/antigravity/scratch/Model V1/default_anchor_cities.csv,100,100,100,100,2000,150,28192,200000,0.8815,1.0,1.247
