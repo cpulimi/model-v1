@@ -59,10 +59,105 @@ cd "$PROJECT"
 mkdir -p logs
 
 module purge
+# `module load mamba/latest` is REQUIRED and was missing here, while every
+# script in sbatch_scripts/ has it. Without it `source activate` does not
+# exist, the activation below silently no-ops (note the trailing `|| true`),
+# and the job runs on the system python -- which is 3.6 on sfpga01n and dies
+# with "SyntaxError: future feature annotations is not defined" AFTER the queue
+# wait. gurobi is not loaded: this path has no Gurobi step.
+module load mamba/latest
 set +u
-if [[ -f "$HOME/.bashrc" ]]; then source "$HOME/.bashrc"; fi
-source activate qubo 2>/dev/null || conda activate qubo 2>/dev/null || mamba activate qubo 2>/dev/null || true
+if [[ -f "$HOME/.bashrc" ]]; then source "$HOME/.bashrc" || true; fi
+
+# Guarded with `command -v` instead of the usual
+#   source activate qubo || conda activate qubo || mamba activate qubo || true
+# because `source` is a POSIX SPECIAL BUILTIN: when it cannot find the file, a
+# non-interactive shell EXITS on the spot and never evaluates the `||` chain.
+# So that chain is dead code exactly when it is needed -- if mamba failed to
+# load, the job dies with a bare "bash: activate: No such file or directory"
+# and the interpreter check below never gets to explain what went wrong.
+# Confirm the env EXISTS before activating it. conda's bin/activate calls
+# `exit` on an unknown env name, which kills a non-interactive shell outright --
+# `|| true` cannot catch that either. Checking first keeps every failure mode
+# non-fatal here, so the interpreter check below is always reached and always
+# gets to explain what is actually wrong.
+CONDA_ENV="${VA_CONDA_ENV:-qubo}"
+if conda env list 2>/dev/null | awk 'NF && $1 !~ /^#/ {print $1}' | grep -qx "$CONDA_ENV"; then
+  if command -v activate >/dev/null 2>&1; then
+    source activate "$CONDA_ENV" || true
+  else
+    conda activate "$CONDA_ENV" || true
+  fi
+  echo ">>> activated conda env: $CONDA_ENV"
+else
+  echo ">>> WARNING: conda env '$CONDA_ENV' not found (or conda unavailable);"
+  echo ">>>          staying on the current python. Override the name with"
+  echo ">>>          VA_CONDA_ENV=<name>. The interpreter check below decides"
+  echo ">>>          whether this is fatal."
+fi
 set -u
+
+# --- interpreter preflight ------------------------------------------------
+# Prove the active python can actually run the solver BEFORE queueing any work.
+# Written in 3.6-compatible syntax (no f-strings) so the check reports the
+# problem instead of dying of it.
+echo ">>> interpreter check: $(command -v python || echo '<no python on PATH>')"
+set +e
+python - <<'PYCHECK'
+import sys
+
+ok = True
+v = sys.version_info
+print("    python:      %d.%d.%d" % (v[0], v[1], v[2]))
+print("    executable:  %s" % sys.executable)
+
+if v < (3, 7):
+    sys.stderr.write("    FAIL: need >= 3.7; 'from __future__ import "
+                     "annotations' does not exist before 3.7.\n")
+    ok = False
+
+# The definitive test: can THIS interpreter parse the solver at all?
+# compile() rather than py_compile: it parses in memory and writes no .pyc,
+# so it needs no temp file and cannot fail for filesystem reasons.
+for src in ("run_va_fsl_solver.py", "va_probe.py"):
+    try:
+        f = open(src)
+        try:
+            compile(f.read(), src, "exec")
+        finally:
+            f.close()
+        print("    syntax:      %s parses OK" % src)
+    except SyntaxError as exc:
+        sys.stderr.write("    FAIL: %s does not parse on this python: %s\n"
+                         % (src, exc))
+        ok = False
+    except IOError as exc:
+        sys.stderr.write("    FAIL: cannot read %s: %s\n" % (src, exc))
+        ok = False
+
+for mod in ("pyqubo", "pandas", "numpy"):
+    try:
+        __import__(mod)
+        print("    import %-8s OK" % mod)
+    except Exception as exc:
+        sys.stderr.write("    FAIL: import %s: %s\n" % (mod, exc))
+        ok = False
+
+sys.exit(0 if ok else 1)
+PYCHECK
+CHECK_RC=$?
+set -e
+if [[ $CHECK_RC -ne 0 ]]; then
+  echo ""
+  echo ">>> ABORT: the active python cannot run run_va_fsl_solver.py."
+  echo ">>>        Expected the 'qubo' env, via:"
+  echo ">>>            module load mamba/latest && source activate qubo"
+  echo ">>>        Investigate with:"
+  echo ">>>            module avail 2>&1 | grep -i mamba"
+  echo ">>>            conda env list"
+  exit 1
+fi
+echo ">>> interpreter check passed"
 
 # --- NEC Vector Annealing environment -------------------------------------
 # The 2022 PoC manual documents release VApoc_0201, but SOL carries V3.0.0 (see
