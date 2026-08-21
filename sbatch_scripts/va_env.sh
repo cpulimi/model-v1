@@ -1,7 +1,13 @@
 #!/bin/bash
 # Shared environment setup for the VA sbatch scripts. Source it, do not run it.
 #
-#     source "$(dirname "${BASH_SOURCE[0]}")/va_env.sh"
+#     source "$PROJECT/sbatch_scripts/va_env.sh"
+#
+# Source it BY ABSOLUTE PATH off the submit dir. Inside an sbatch job
+# ${BASH_SOURCE[0]} / $0 point at /var/spool/slurmd/job<id>/slurm_script, the
+# copy SLURM made, so $(dirname ...) is the spool dir and this file is not
+# beside it. That source fails silently (no `set -e`) and the job then runs
+# without VA on PYTHONPATH and without va_slurm_mem.
 #
 # Sets up: mamba module + conda env, the VA python dir on PYTHONPATH, an
 # interpreter check, and a va_slurm_mem() helper. Deliberately does NOT set

@@ -28,7 +28,20 @@ cd "$PROJECT"
 mkdir -p logs
 
 VA_REQUIRE_CARD=0
-source "$(dirname "${BASH_SOURCE[0]}")/va_env.sh"
+# Source from the SUBMIT dir, never $(dirname "${BASH_SOURCE[0]}"): SLURM copies
+# this file to /var/spool/slurmd/job<id>/slurm_script, so BASH_SOURCE points at
+# the spool dir, where va_env.sh does not exist. A failed `source` is not fatal
+# without `set -e`, so the job ran on with no VA dir on PYTHONPATH (-> "could
+# not import VectorAnnealing") and no va_slurm_mem defined ("command not
+# found"). Fail loudly here instead of producing those two symptoms.
+VA_ENV="$PROJECT/sbatch_scripts/va_env.sh"
+if [[ ! -f "$VA_ENV" ]]; then
+  echo ">>> ABORT: $VA_ENV not found. Submit from the project root so that" >&2
+  echo ">>>        SLURM_SUBMIT_DIR ($PROJECT) is the repo." >&2
+  exit 1
+fi
+# shellcheck disable=SC1090
+source "$VA_ENV"
 
 DATASET="${VA_DATASET:-instances_low}"
 RUN_NAME="${VA_RUN_NAME:-va_par}"
