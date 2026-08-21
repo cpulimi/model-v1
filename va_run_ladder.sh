@@ -55,6 +55,28 @@ if [[ "${PYTHONPATH:-}" != *VectorAnnealing* ]]; then
   fi
 fi
 
+# --- refuse to run anywhere but the card ----------------------------------
+# This script carries no #SBATCH directives -- it runs on whatever node the
+# calling shell is already on. Get that shell without `-p fpga -w sfpga01n`
+# and you land on SOL's default partition (htc), which has no Vector Engine.
+# The solver would then build every QUBO, spend real minutes doing it, and only
+# fail at the first sample() call. Check before any of that work happens.
+VE_COUNT=$(ls -1 /dev/veslot* /dev/ve[0-9]* 2>/dev/null | wc -l | tr -d ' ')
+if [[ "${VE_COUNT:-0}" -eq 0 && -z "${VA_ALLOW_NO_CARD:-}" ]]; then
+  echo ""
+  echo ">>> ABORT: no VE device visible on $(hostname) -- this is not the VA node."
+  echo ">>>        You are probably on SOL's default partition (htc). Get a shell"
+  echo ">>>        on the card first:"
+  echo ">>>"
+  echo ">>>            srun -w sfpga01n -p fpga --pty /bin/bash"
+  echo ">>>            module load mamba/latest && source activate qubo"
+  echo ">>>            ./va_run_ladder.sh"
+  echo ">>>"
+  echo ">>>        Set VA_ALLOW_NO_CARD=1 to override (only useful with --dry-run;"
+  echo ">>>        an actual solve cannot work without the card)."
+  exit 1
+fi
+
 echo ">>> host      $(hostname)"
 echo ">>> python    $(command -v python3) -- $(python3 -V 2>&1)"
 echo ">>> VE nodes  $(ls -1 /dev/veslot* /dev/ve[0-9]* 2>/dev/null | tr '\n' ' ' || echo none)"
