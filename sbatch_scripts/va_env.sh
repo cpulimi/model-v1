@@ -94,24 +94,96 @@ fi
 echo ">>> interpreter OK"
 
 # --- SLURM memory accounting ---------------------------------------------
-# Additive instrumentation: SLURM's authoritative MaxRSS as an outside
-# cross-check on the rss_peak_mb the solver records. Never fails the caller.
+# Additive instrumentation: an outside cross-check on the rss_peak_mb the solver
+# records. Never fails the caller.
+#
+# WHY THIS IS TWO MECHANISMS. seff and `sacct MaxRSS` read the slurmdbd
+# accounting database, and that database is not written until the step ENDS.
+# Called from inside the job -- the only place these scripts can call it -- both
+# therefore report a job that is still RUNNING with "Memory Utilized: 0.00 MB".
+# That is exactly what happened to the 10- and 20-hub runs: every seff_*.txt
+# says State: RUNNING and every slurm_mem_va.tsv memory column is blank. sstat
+# reads the live step and is supposed to cover this, but it returns nothing here
+# (it needs a jobacct_gather plugin that actually samples, and the step name it
+# wants varies), so it cannot be the only fallback.
+#
+#   1. va_cgroup_peak (below, in-job)  -- the kernel's own high-water mark for
+#      the job cgroup. Always available, needs no accounting database, and is
+#      the same number cgroup-based SLURM accounting would eventually report.
+#      This is the one that actually saves the data.
+#   2. va_par_acct.sh (post-hoc job)   -- runs afterany on solve+merge, once the
+#      steps have ended and slurmdbd has flushed, and rewrites the authoritative
+#      rows. This is the one that gets a real seff.
+#
+# Rows carry a `source` column so the two are never silently mixed:
+# `in_job` (provisional, cgroup-backed) vs `post_hoc` (final, sacct-backed).
+
+# Kernel high-water mark for this job's cgroup, in MB. Empty if unavailable.
+#
+# Read AFTER the python child exits but BEFORE the step tears down -- the value
+# is a high-water mark the kernel keeps for the whole cgroup, so a dead child's
+# peak still counts. Walks up from this process's own cgroup because the batch
+# step sits in a nested leaf (.../job_<id>/step_batch/user/task_0) while the
+# interesting total is on an ancestor; take the max over the chain.
+va_cgroup_peak() {
+  local rel base line dir best=0 val f
+  # cgroup v2 is "0::<path>"; v1 has a "<n>:memory:<path>" line.
+  rel=$(awk -F: '$2 == "" {print $3; exit}' /proc/self/cgroup 2>/dev/null || true)
+  if [[ -n "$rel" ]]; then
+    base="/sys/fs/cgroup$rel"                       # v2: unified hierarchy
+  else
+    rel=$(awk -F: '$2 ~ /(^|,)memory(,|$)/ {print $3; exit}' /proc/self/cgroup 2>/dev/null || true)
+    [[ -z "$rel" ]] && return 0
+    base="/sys/fs/cgroup/memory$rel"                # v1: per-controller mount
+  fi
+  dir="$base"
+  while [[ -n "$dir" && "$dir" != "/sys/fs/cgroup" && "$dir" != "/" ]]; do
+    # memory.peak is cgroup v2 (kernel >= 6.8); max_usage_in_bytes is v1.
+    for f in "$dir/memory.peak" "$dir/memory.max_usage_in_bytes"; do
+      if [[ -r "$f" ]]; then
+        val=$(cat "$f" 2>/dev/null || true)
+        [[ "$val" =~ ^[0-9]+$ ]] && (( val > best )) && best=$val
+      fi
+    done
+    dir=$(dirname "$dir")
+  done
+  (( best > 0 )) && awk -v b="$best" 'BEGIN{printf "%.1f", b/1048576}'
+}
+
 # Usage: va_slurm_mem <run_dir> <jobid> <label>
 va_slurm_mem() {
   local run_dir="$1" jobid="$2" label="$3"
   [[ -z "${SLURM_JOB_ID:-}" ]] && return 0
   mkdir -p "$run_dir" || return 0
+
+  local tsv="$run_dir/slurm_mem_va.tsv"
+  # Header, once. Without it the file is six unlabelled columns and the blank
+  # memory fields read as "the job used no memory" rather than "not collected".
+  if [[ ! -s "$tsv" ]]; then
+    printf 'JobID\tLabel\tSource\tCgroupPeakMB\tMaxRSS\tMaxVMSize\tReqMem\tElapsed\tState\n' > "$tsv"
+  fi
+
+  # Take the cgroup peak FIRST: it is the number that is actually available now,
+  # and the sleep below is dead time during which nothing else reads it.
+  local cgpeak
+  cgpeak=$(va_cgroup_peak)
+
   sleep 10  # let SLURM register the step
   if command -v seff >/dev/null 2>&1; then
-    seff "$jobid" > "$run_dir/seff_${label}_${jobid}.txt" 2>&1 || true
+    seff "$jobid" > "$run_dir/seff_${label}_${jobid}.in_job.txt" 2>&1 || true
   fi
-  # sstat reads the LIVE step so MaxRSS is populated mid-job; sacct only
-  # flushes it after the step ends. Try sstat first, fall back to sacct.
-  local sstat_line maxrss maxvm sacct_line reqmem elapsed
-  sstat_line=$(sstat -j "${SLURM_JOB_ID}.batch" --format=MaxRSS,MaxVMSize \
-    --units=M --noheader --parsable2 2>/dev/null | head -n1 || true)
-  maxrss=$(printf '%s' "$sstat_line" | awk -F'|' '{print $1}')
-  maxvm=$(printf '%s' "$sstat_line" | awk -F'|' '{print $2}')
+
+  # sstat reads the LIVE step. Try it, but do not depend on it -- see the note
+  # above. --allsteps rather than a guessed ".batch" suffix, because which step
+  # carries the numbers differs between a plain job and an array task.
+  local maxrss maxvm sacct_line reqmem elapsed state
+  maxrss=$(sstat --allsteps -j "${SLURM_JOB_ID}" --format=MaxRSS \
+    --units=M --noheader --parsable2 2>/dev/null \
+    | tr -d ' ' | grep -E '^[0-9.]+M?$' | sort -h | tail -n1 || true)
+  maxvm=$(sstat --allsteps -j "${SLURM_JOB_ID}" --format=MaxVMSize \
+    --units=M --noheader --parsable2 2>/dev/null \
+    | tr -d ' ' | grep -E '^[0-9.]+M?$' | sort -h | tail -n1 || true)
+
   sacct_line=$(sacct -j "$jobid" \
     --format=JobID,JobName,MaxRSS,MaxVMSize,ReqMem,Elapsed,State \
     --units=M --noheader --parsable2 2>/dev/null \
@@ -120,8 +192,18 @@ va_slurm_mem() {
   [[ -z "$maxvm" ]] && maxvm=$(printf '%s' "$sacct_line" | awk -F'|' '{print $4}')
   reqmem=$(printf '%s' "$sacct_line" | awk -F'|' '{print $5}')
   elapsed=$(printf '%s' "$sacct_line" | awk -F'|' '{print $6}')
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$jobid" "$label" "$maxrss" "$maxvm" "$reqmem" "$elapsed" \
-    >> "$run_dir/slurm_mem_va.tsv"
-  echo ">>> slurm mem: $label MaxRSS=$maxrss MaxVMSize=$maxvm ReqMem=$reqmem Elapsed=$elapsed"
+  state=$(printf '%s' "$sacct_line" | awk -F'|' '{print $7}')
+  # A blank sacct line still means the job is alive; say so rather than leaving
+  # a column that reads as missing data.
+  [[ -z "$state" ]] && state="RUNNING"
+
+  printf '%s\t%s\tin_job\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$jobid" "$label" "${cgpeak:-}" "$maxrss" "$maxvm" "$reqmem" "$elapsed" "$state" \
+    >> "$tsv"
+  echo ">>> slurm mem: $label cgroup_peak=${cgpeak:-<n/a>}MB MaxRSS=${maxrss:-<pending>}" \
+       "MaxVMSize=${maxvm:-<pending>} ReqMem=${reqmem:-<pending>} Elapsed=${elapsed:-<pending>}"
+  if [[ -z "$maxrss" ]]; then
+    echo ">>>   MaxRSS is blank because this job has not ended yet. va_par_acct.sh" \
+         "will append the final post_hoc row."
+  fi
 }

@@ -19,6 +19,9 @@
 #                one batch instead of the whole run.
 #   3) merge  -- one job, afterok on the array, on a NORMAL partition. Merge is
 #                pure CPU, so it does not hold the scarce VE node.
+#   4) acct   -- one job, afterany on both, on a normal partition. Collects the
+#                SLURM memory numbers, which cannot be read from inside a job
+#                that has not ended yet. See va_par_acct.sh.
 #
 # All tuning lives in the VA_* environment variables below, read identically by
 # va_par_solve.sh and va_par_merge.sh, so the three stages cannot drift apart.
@@ -105,18 +108,41 @@ fi
 # --- 3) dependent merge, off the card -------------------------------------
 MERGE_ID=$(sbatch --parsable --dependency=afterok:"$SOLVE_ID" \
   "$PROJECT/sbatch_scripts/va_par_merge.sh")
-echo ">>> [3/3] merge submitted: job $MERGE_ID (runs after $SOLVE_ID succeeds)"
+echo ">>> [3/4] merge submitted: job $MERGE_ID (runs after $SOLVE_ID succeeds)"
+
+# --- 4) post-hoc accounting, after everything has ENDED --------------------
+# seff and `sacct MaxRSS` read slurmdbd, which is not written until a step ends,
+# so the va_slurm_mem() call inside solve/merge can only ever see a RUNNING job
+# with 0.00 MB used -- which is what the 10- and 20-hub runs recorded. Those
+# rows age out of slurmdbd, so the loss is permanent if nothing collects them.
+# This job runs once both stages are over and fills in the real numbers.
+#
+# afterany on BOTH, not afterok: a solve that died on OOM or walltime is exactly
+# the run whose memory figure matters, and afterok would skip it.
+export VA_ACCT_JOBS="$SOLVE_ID $MERGE_ID"
+ACCT_ID=$(sbatch --parsable --dependency=afterany:"$SOLVE_ID",afterany:"$MERGE_ID" \
+  "$PROJECT/sbatch_scripts/va_par_acct.sh")
+echo ">>> [4/4] accounting submitted: job $ACCT_ID (runs after $SOLVE_ID and $MERGE_ID end)"
 
 cat <<EOF
 
 Queue:   squeue -u \$USER
 Logs:    logs/va_par_solve_${SOLVE_ID}_<batch>.out
          logs/va_par_merge_${MERGE_ID}.out
+         logs/va_par_acct_${ACCT_ID}.out
 Final:   $VA_OUTDIR/$VA_RUN_NAME/va/
+Memory:  $VA_OUTDIR/$VA_RUN_NAME/slurm_mem_va.tsv
+         in_job rows carry CgroupPeakMB (kernel high-water mark, always there);
+         post_hoc rows carry the real MaxRSS once slurmdbd has flushed.
 Read:    python3 va_results.py --run-root $VA_OUTDIR
 
 If some batches fail, the finished ones are kept. Resubmit only the missing
 ids (merge names them), then run the merge again:
     sbatch --array=<ids>%$CONCURRENCY sbatch_scripts/va_par_solve.sh
     sbatch sbatch_scripts/va_par_merge.sh
+
+To collect memory for jobs that already ran, name them by hand (this works for
+any past run whose ids are still in slurmdbd):
+    VA_ACCT_JOBS='<solve_id> <merge_id>' VA_RUN_NAME=$VA_RUN_NAME \\
+        VA_OUTDIR=$VA_OUTDIR sbatch sbatch_scripts/va_par_acct.sh
 EOF

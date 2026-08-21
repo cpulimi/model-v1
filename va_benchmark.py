@@ -533,6 +533,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-root", default="results/va_benchmark",
                    help="full mode: where each instance's solver run is written.")
     p.add_argument("--csv", default="", help="Write the consolidated table here.")
+    p.add_argument("--html", default="", help="Also render a readable HTML report from that table.")
     p.add_argument("--part-batch-size", type=int, default=1000)
     p.add_argument("--max-z-vars-per-batch", type=int, default=50000)
     p.add_argument("--va-max-vars-per-batch", type=int, default=60000)
@@ -577,10 +578,20 @@ def main(argv: list[str] | None = None) -> int:
     print_report(rows, cli.mode)
     print_trend_analysis(rows, cli.mode)
 
-    if cli.csv:
-        Path(cli.csv).parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(rows).to_csv(cli.csv, index=False)
-        print(f"\nconsolidated table -> {cli.csv}")
+    csv_path = cli.csv or (cli.html and str(Path(cli.html).with_suffix(".csv")))
+    if csv_path:
+        Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(rows).to_csv(csv_path, index=False)
+        print(f"\nconsolidated table -> {csv_path}")
+
+    if cli.html:
+        import va_report
+        out = Path(cli.html)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(va_report.build_report(pd.DataFrame(rows), csv_path or "(in-memory)"),
+                       encoding="utf-8")
+        print(f"readable report      -> {out}")
+        print(f"  open it with:  open {out}")
     return 0 if all(r.get("status") == "OK" for r in rows) else 1
 
 
