@@ -1,0 +1,144 @@
+
+============================================================================
+VA QUBO MODEL - ALIGNED COST BASIS (PyQUBO formulation)
+============================================================================
+  dataset:                  instances_10hubs
+  active demand pairs:      3,207
+  parts loaded:             150
+  hubs loaded:              10
+  candidate hubs/zip:       all (avg 1.00)
+  total QUBO batches:       1
+  max Z vars/batch:         50,000
+  VA max total vars/batch:  60,000
+  formulation:              pyqubo Binary + Placeholder -> compile().to_qubo()
+  to_qubo offset:           held out of VA (default); recorded in the CSVs
+  sampler:                  NEC Vector Annealing
+    vector_mode:            ACCURACY
+    num_reads (base):       100
+    num_sweeps:             3000
+    beta_range:             VA default [10,100,200]
+    repeats:                1
+    seed:                   5
+    precision:              VA default
+    max constraint retries: 3
+    onehot flip option:     OFF
+  penalty mode:             adaptive
+  objective scale:          OFF (penalties flat at --min-penalty)
+  min penalty (floor):      50,000.00
+  adaptive penalty:         within-batch
+    max iterations:         8
+    growth factor:          1.5
+    NOTE: C3 starts at 50,000 vs S_lim 500,000; stocking at a closed hub is initially cheaper than opening one.
+          escalation needs ~6 iterations to pass S_lim (budget is 8).
+  constraint multiplier:    5.00  (inactive: scale is OFF)
+  base miles:               20.0
+  penalty start miles:      130.0
+  max service miles:        180.0
+  output folder:            /home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_05_seed5/va
+============================================================================
+
+Preflight: compiling every batch QUBO to measure true variable counts...
+
+============================================================================================================
+VA BATCH PLAN
+============================================================================================================
+  configured ceiling (--va-max-vars-per-batch): 60,000 vars/batch
+  VA hard maximum (per manual):                 100,000 vars
+  dense matrix at the hard max:                 37.3 GiB
+  dense matrix at the ceiling:                  13.4 GiB
+  NOTE: VA stores the problem densely; QUBO sparsity does not reduce this.
+------------------------------------------------------------------------------------------------------------
+ batch   parts      rows          Z         Y       X   total_vars       dense_bytes        dense     status
+------------------------------------------------------------------------------------------------------------
+     1     149     3,207      3,207     1,180      10        4,397        77,334,436     73.8 MiB         OK
+------------------------------------------------------------------------------------------------------------
+  batches: 1 | largest batch: #1 at 4,397 vars (73.8 MiB dense) | summed vars across batches: 4,397
+  pyqubo: expression build 0.25s + compile 0.02s across 1 batch(es)
+  matrix density: 0.068125% at its sparsest | avg couplings/var 2.0 | VA dense 73.8 MiB vs sparse-equivalent 102.9 KiB (734x more memory than the couplings need)
+  largest to_qubo offset (the C1 constant): 160,350,000.00 (held out of VA; see --va-include-offset)
+============================================================================================================
+VectorAnnealing imported (local on-prem module; no service client).
+  module file:     /opt/va/V3.0.0/libexec/VectorAnnealing/python/VectorAnnealing/__init__.py
+  module version:  <module exposes no version attribute>
+  python:          3.11.15 | packaged by conda-forge | (main, Mar  5 2026, 16:45:40) [GCC 14.3.0]
+  hostname:        sfpga01n
+  VE_NODE_NUMBER:  <unset>
+  VE devices:      2 device node(s) = 1 card(s) -> /dev/ve0, /dev/veslot0
+
+=== VA Batch 1 | 149 parts | 3,207 demand rows | estimated Z=3,207 ===
+  [1/3] Formulating and compiling the PyQUBO model...
+    built in 0.31s (pyqubo expression 0.26s + compile 0.02s) | Z=3,207 Y=1,180 X=10 total_vars=4,397 interactions=8,784
+    penalties: C1=50,000.00 C2=50,000.00 C3=50,000.00
+    to_qubo offset (C1 constant): 160,350,000.00 -> held at 0.0 for VA (fp32 headroom + OpenJij comparability)
+  [2/3] Sampling with VectorAnnealing | reads=100 sweeps=3000 vector_mode=ACCURACY beta_range=VA default [10,100,200] | repeats=1 | adaptive=within-batch (max 8 iters, growth 1.5)
+    adaptive iter 1/8 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | penalties C1=50,000 C2=50,000 C3=50,000 | offset=160,350,000
+    iter 1 repeat 1 attempt 1: 100 reads in 614.46s | constraint satisfied 100/100
+    iter 1 repeat 1 | energy min/med/max = -154,851,056.82 / -154,851,056.82 / -154,851,056.82 | cost min/med/max = 5,498,943.18 / 5,498,943.18 / 5,498,943.18 | structurally feasible reads 100/100
+    adaptive feasible at iter 1
+  [3/3] Batch selected | OK | aligned cost=$5,498,943.18 | total_time=618.24s
+    matrix: density=0.068125% (13,171 non-zero of 19,333,609 cells) | avg couplings/var=2.0 | VA dense alloc 73.8 MiB vs sparse 102.9 KiB (734x)
+
+  VE DEVICE MEMORY (card-side; never added to host RSS)
+    HBM capacity:        <unknown>  [unknown]
+    predicted (dense):   73.8 MiB
+    OBSERVED peak:       <none: no runtime device readout on this install>
+    note: result.memory_usage=1.19140625 recorded raw. Unit is not documented; observed_peak_device_bytes NOT populated. Once the unit is confirmed, promote from raw to bytes. HBM capacity is also unreadable here; pass --ve-hbm-gb to record it explicitly.
+
+============================================================================================
+HOST MEMORY BY PHASE
+============================================================================================
+  phase                                n    wall s  RSS peak MB   HWM+ MB  HWM+ self
+  solve.sample_eval                    1      3.12        293.0      62.1       62.1
+  solve.va_model_build                 1      0.35        218.5      30.4       30.4
+  preflight.pyqubo_compile             1      0.02        148.8      30.1       30.1
+  solve.pyqubo_compile                 1      0.02        184.7      29.9       29.9
+  solve.va_sample                      1    614.46        230.9      12.4       12.4
+  preflight                            1      0.33        153.9      46.2       10.8
+  preflight.to_qubo                    1      0.04        153.9       5.0        5.0
+  data_load                            1      0.04        107.9       4.6        4.6
+  solve.to_qubo                        1      0.02        188.1       3.4        3.4
+  batch_build                          1      0.02        108.4       0.5        0.5
+  preflight.pyqubo_express             1      0.04        118.7       0.3        0.3
+  solve.pyqubo_express                 1      0.04        154.9       0.2        0.2
+  solve                                2    618.24        293.0     138.4        0.0
+
+  Host peak is driven by: solve.sample_eval (+62.1 MB of the process high-water mark)
+
+  Double compile: preflight 0.44s vs solve-side QUBO build 0.09s -- build_batch_plan() compiles every batch, then solve_va_batch() compiles it again.
+============================================================================================
+
+############################################################################################
+VA FLOAT32 PRECISION AUDIT
+############################################################################################
+  VA computes in single precision; recomputed_energy is the float64 host reference.
+  reads audited:            100
+  MAX  |rel_diff|:          1.539664e-15
+  MEDIAN |rel_diff|:        1.539664e-15
+  max  |abs_diff|:          0.0000
+  median |abs_diff|:        0.0000
+
+  Read this against your cost scale: an |abs_diff| larger than the cost
+  differences you care about means VA cannot rank those solutions.
+  detail CSV:               va_precision_audit.csv
+############################################################################################
+============================================================================
+VA FINAL RESULTS
+============================================================================
+  total cost:                 $5,498,943.18
+  inventory cost:             $194,158.12
+  fixed open-hub cost:        $5,000,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $18,100.00
+  assignment transport cost:  $286,685.06
+  open hubs:                  10
+  closed hubs:                0
+  stocked hub-part pairs:     1,180
+  hub-zip-part pairings:      3,207
+  structural violations:      0
+  SLA distance violations:    638
+  wall time:                  619.11s
+  peak/current host RSS:      293.5/293.5 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_05_seed5/va
+============================================================================
+
+>>> VA fp32 precision: max |rel_diff| = 1.539664e-15, median |rel_diff| = 1.539664e-15 over 100 reads. See va_precision_audit.csv.

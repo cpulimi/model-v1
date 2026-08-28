@@ -1,0 +1,75 @@
+======================================================================================
+DETERMINISM STUDY
+======================================================================================
+  instance     instances_10hubs
+  arm A        SKIPPED -- no control arm, so Arm B has no gate
+  arm B        10 runs, --va-seed 1..10
+  extra flags  <none>  (identical in both arms)
+  PYTHONHASHSEED=0 forced for every run
+  output       /home/cpulimi/ModelV1/model-v1/results/determinism_10hubs
+  NOTE: one VE card, so runs are sequential. 10 runs total.
+======================================================================================
+  [B01] seed=1  running -> B_01_seed1.log
+  [B01] ok in 620s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B02] seed=2  running -> B_02_seed2.log
+  [B02] ok in 620s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B03] seed=3  running -> B_03_seed3.log
+  [B03] ok in 620s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B04] seed=4  running -> B_04_seed4.log
+  [B04] ok in 619s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B05] seed=5  running -> B_05_seed5.log
+  [B05] ok in 620s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B06] seed=6  running -> B_06_seed6.log
+  [B06] ok in 621s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B07] seed=7  running -> B_07_seed7.log
+  [B07] ok in 620s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B08] seed=8  running -> B_08_seed8.log
+  [B08] ok in 620s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B09] seed=9  running -> B_09_seed9.log
+  [B09] ok in 620s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+  [B10] seed=10  running -> B_10_seed10.log
+  [B10] ok in 620s | hubs=10 cost=5,498,943.18 rss=293MB viol=0
+
+======================================================================================
+DETERMINISM STUDY SUMMARY
+======================================================================================
+  instance: instances_10hubs
+  runs: 10 usable (0 arm A, 10 arm B)
+  PYTHONHASHSEED recorded in runs: ['0']
+
+  ----------------------------------------------------------------------------------
+  ARM A -- identical seed. Anything varying here is NOT the annealer.
+  ----------------------------------------------------------------------------------
+    NOT RUN. Without the fixed-seed control there is no gate: any variation
+    Arm B shows cannot be attributed to the annealer rather than the harness.
+    Re-run with --arms A to add it (the runs are independent and resumable).
+
+  ----------------------------------------------------------------------------------
+  ARM B -- varying seed. Variation here IS the annealer.
+  ----------------------------------------------------------------------------------
+    10 runs at seeds [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    distinct open-hub sets: 1
+    distinct total costs:   1
+
+    cost across arm B:
+      mean        5,498,943.1785
+      stdev               0.0000   (CV 0.000e+00)
+      median      5,498,943.1785
+      min         5,498,943.1785
+      max         5,498,943.1785
+      range               0.0000
+
+    INTERPRETATION:
+      Neither the hub set nor the cost varied. The annealer returned the
+      same solution at every seed.
+
+  ----------------------------------------------------------------------------------
+  INSTANCE CAVEAT
+  ----------------------------------------------------------------------------------
+    ALL 10 hubs are FORCED open by geometry (3,207 of 3,207 demand rows have exactly
+    one reachable hub). The open-hub set CANNOT vary on this instance, so its
+    stability below is a property of the instance, not evidence about the solver.
+    See va_instance_geometry.py.
+======================================================================================
+
+  CSV: /home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/determinism_runs.csv

@@ -1,0 +1,11 @@
+arm,run_index,seed,rc,wall_seconds,n_open_hubs,open_hubs,total_cost,peak_host_rss_mb,stocked_pairs,assignments,structural_violations,c1,c2,c3,c4_hubs_over_L,sla_violations,max_service_violations,python_hash_seed,hash_order_deterministic,memory_accounting_version,run_dir
+B,1,1,0,620.01,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.031,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_01_seed1
+B,2,2,0,620.38,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.023,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_02_seed2
+B,3,3,0,619.95,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.02,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_03_seed3
+B,4,4,0,619.07,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.02,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_04_seed4
+B,5,5,0,620.07,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.48,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_05_seed5
+B,6,6,0,620.8,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.473,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_06_seed6
+B,7,7,0,620.38,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.02,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_07_seed7
+B,8,8,0,619.75,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.023,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_08_seed8
+B,9,9,0,620.12,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,293.477,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_09_seed9
+B,10,10,0,620.25,10,H001;H002;H003;H004;H005;H006;H007;H008;H009;H010,5498943.1785,292.859,1180,3207,0,0,0,0,0,638,0,0,True,2,/home/cpulimi/ModelV1/model-v1/results/determinism_10hubs/runs/B_10_seed10
