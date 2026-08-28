@@ -91,17 +91,205 @@ All four fit one batch — the ladder is genuinely single-shot VA, not a merge a
 | 10 | 0.25 s | 617.64 s | 2.58 s | 0.24 s | 621.12 s | 99.44% |
 | 20 | 0.50 s | 1,597.39 s | 5.79 s | 0.47 s | 1,604.98 s | 99.53% |
 
-### 2.3 Memory — **four different numbers, label them**
+### 2.3 Memory — **label every number; never add host to device**
+
+`memory_accounting_version: 2` marks the post-fix semantics. A `summary.json` **without**
+that key predates the fix and its `peak_memory_mb` is a tracemalloc figure, not RSS.
 
 | Field | What it is | 10 hubs | 20 hubs |
 |---|---|---:|---:|
-| `peak_memory_mb` | `tracemalloc`, Python objects only | 53.0 MB | 114.5 MB |
-| `rss_peak_mb` | process RSS — the honest host figure | 253.6 MB | 480.7 MB |
-| `max_dense_matrix_bytes` | VA's dense QUBO allocation | 77.3 MB | 286 MB |
-| SLURM `MaxRSS` / cgroup peak | node-level truth | now collected (§5.1) | now collected |
+| `peak_memory_mb` | **host RSS high-water mark**, max over batch and merge processes | 253.6 MB | 480.7 MB |
+| `current_memory_mb` | host RSS at report time (merge process) | — | 147.0 MB |
+| `max_batch_python_peak_tracemalloc_mb` | Python objects only — blind to pandas/pyqubo/VA | 53.0 MB | 114.5 MB |
+| `max_batch_cgroup_peak_mb` | whole SLURM step; **size `--mem` against this one** | collect | collect |
+| `max_batch_rss_children_peak_mb` | largest finished child — 0.0 expected, nothing forks | 0.0 | 0.0 |
+| `max_dense_matrix_bytes` | VA's dense QUBO allocation — **device**, predicted | 77.3 MB | 286 MB |
+| `ve_device.observed_peak_device_bytes` | **device, measured** — null unless a source exists | null | null |
 
-Lead with RSS. The tracemalloc number will look absurd beside an 8.34 GiB dense matrix at
-N=100, and the three are routinely confused.
+Two rows that used to be one: `peak_memory_mb` was the tracemalloc figure through
+`va_10hubs` and `va_20hubs`. It read 53.0 MB against a true 253.6 MB, and 114.5 MB against
+a true 480.7 MB. `rss_peak_mb` was correct throughout — no measurement was ever lost, only
+mislabelled. Do not turn those pairs into a multiplier: two instances is not a trend, and
+tracemalloc's share moves with instance shape.
+
+**`peak_memory_mb` is a max, not a sum.** It is the largest RSS any single process reached.
+The batches ran as separate SLURM array tasks serialised on one card, so they were never
+resident together. For a `--mem` request use `cgroup_peak_mb`.
+
+**Host and device are separate resources and are never added.**
+
+### 2.3a Canonical scaling table — regenerate, do not retype
+
+`python3 va_scaling_table.py --csv results/va_scaling.csv` reads the run artefacts, so it
+cannot drift from what was actually measured. **Use it as the source for any slide.**
+
+| instance | hubs | total_vars | host RSS MB | cgroup MB | device MB | batches | wall s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| | | | *measured* | *measured* | *predicted* | | |
+| instances_10hubs | 10 | 4,397 | 253.6 | — | 73.8 | 1 | 621.1 |
+| instances_20hubs | 20 | 8,659 | 480.7 | — | 286.0 | 1 | 1,605.0 |
+| instances_50hubs | 50 | 23,652 | **—** | — | 2,134.0 | 1 | — |
+
+Two gaps, both real, neither back-filled:
+- **50-hub host RSS was never measured.** The solve was killed in its first adaptive
+  iteration. `total_vars` and the dense prediction survive because they come from the
+  compile, not the anneal.
+- **cgroup peak was never captured for any run.** The pre-fix TSVs are headerless with
+  blank memory columns; `seff` ran in-job and reported `State: RUNNING / 0.00 MB`. The
+  capture is fixed now (§5.1) but postdates these runs.
+
+#### The "240 MB → 2.1 GB, roughly 9×" claim is wrong — do not present it
+
+It compares **253.6 MB host RSS, measured, on the 10-hub instance** against **2,134 MB
+device dense, predicted, on the 50-hub instance**. Different resource, different instance,
+different scaling law, and one is a measurement while the other is arithmetic. The ratio
+describes nothing.
+
+What can honestly be said, each **within one resource**:
+
+- host RSS **253.6 → 480.7 MB** across 10→20 hubs (**1.90×**) — both measured
+- device dense **73.8 → 2,134.0 MB** across 10→50 hubs (**28.9×**) — both predicted
+
+Never add them and never divide one into the other.
+
+### 2.3b Which resource binds — **not currently determinable**
+
+Device cost is `4N²` (quadratic, exact). Host cost is *modelled* as `a + b·N` — linear in
+interaction count, because the host never densifies (§3). The crossover is where they meet.
+
+**`runtime.host_device_crossover.crossover_vars` is `null` for every run in this repo, and
+that is the correct answer.** It is a least-squares fit over per-batch
+`(total_vars, rss_peak_mb)` pairs and refuses below 3 batches. Every VA run recorded so far
+is a **single batch**, so there is one point — no slope, no intercept, no fit.
+
+Why the refusal matters. Three defensible methods on the same two runs disagree:
+
+| method | crossover |
+|---|---:|
+| two-point fit, free intercept (a=19.2, b=0.0533) | 14,321 |
+| proportional through the origin (10- and 20-hub mean) | 14,553 |
+| 10-hub point alone, through the origin | 15,120 |
+
+The spread is the intercept: host RSS has a real fixed floor (~19 MB of interpreter, pandas
+and instance data) that an origin-forced model cannot express. A single-point estimate
+picks one of these arbitrarily and reports it to five digits.
+
+**Is host RSS actually linear? Unknown — and untestable with today's data.** Two points
+define a line exactly; there is no residual, so linearity is an *assumption*, not a finding.
+A third point would be the first real test. The 50-hub run cannot supply it: it died during
+its first adaptive iteration (`logs/va_par_solve_61924260_1.out` ends at
+`adaptive iter 1/8`, no checkpoint, no `rss_peak` line), so `total_vars = 23,652` was
+measured but **host RSS never was**.
+
+To make the crossover computable, either:
+- run a ladder rung with `--part-batch-size` low enough to produce ≥3 batches, or
+- complete 50 and 100 hubs and fit across runs rather than within one.
+
+Until then, state the regime qualitatively: both completed runs are host-bound at the sizes
+measured (253.6 MB host vs 73.8 MB dense at 10 hubs; 480.7 vs 286.0 at 20 hubs), device
+cost grows quadratically and host cost does not, so device must dominate eventually — but
+*where* is not yet measured.
+
+### 2.3b-ii The redundant preflight compile is a MEMORY cost, not just a time cost
+
+`build_batch_plan()` compiles every batch during preflight; `solve_va_batch()` compiles each
+one again. The wall-time cost is small (~0.3 s/batch at 20 hubs, ~1.4 s at 50, against a
+600–1,600 s anneal) and on that basis alone it is not worth fixing.
+
+Memory is a different argument. Same process, same instance, card-free phases only,
+solve run with and without the preceding preflight:
+
+| instance | solve only | preflight + solve | preflight's cost |
+|---|---:|---:|---:|
+| 10 hubs | 167.5 MB | 201.0 MB | **+33.5 MB (+20%)** |
+| 20 hubs | 209.2 MB | 278.0 MB | **+68.8 MB (+33%)** |
+
+RSS at the moment the solve starts is 207 MB after preflight versus 127 MB fresh (20 hubs),
+after an explicit `gc.collect()` — preflight's models are dropped but the memory is not
+returned before the solve begins.
+
+Two caveats, both material:
+- **Measured on macOS**, whose allocator retains freed blocks. glibc returns large mmap'd
+  allocations on free, so the effect may be smaller or absent on the VE node. The VmHWM
+  self-delta columns settle it there; run `va_memory_selftest.py` first.
+- These are **card-free phases only**. The real 20-hub solve peaked at 480.7 MB with the
+  card, well above the 210 MB preflight, so on a real sequential run the solve still sets
+  the peak — preflight raises the *floor* it starts from rather than setting the maximum.
+
+So: preflight inflates sequential host memory by roughly the un-returned floor, and the
+timing verdict does not cover that. It does not change which phase sets the peak.
+
+### 2.3b-iii Hash-order determinism — required for the repeat study
+
+`PYTHONHASHSEED` is now exported by every VA launch script (`va_env.sh`,
+`va_par_solve.sh`, `va_par_merge.sh`, `va_par_launch.sh`, `va_solve.sh`,
+`va_run_ladder.sh`), defaulting to `0` and overridable. Every OpenJij-era sbatch script
+already did this; the VA path had lost it.
+
+Each `summary.json` now records what actually happened:
+
+| field | meaning |
+|---|---|
+| `python_hash_seed` | what the environment asked for (`"0"`, `"random"`, `"<unset>"`) |
+| `hash_randomization_active` | what the interpreter did — the ground truth |
+| `hash_order_deterministic` | convenience inverse of the above |
+| `batch_python_hash_seeds` | seeds the SOLVE processes ran under, carried through the merge |
+
+The last one matters because solve and merge are separate jobs: a pinned merge over
+unpinned solves is not a pinned run. Batches from before this change report
+`"<unrecorded>"` — which is what `va_10hubs` and `va_20hubs` show, correctly, since their
+solves ran without the export.
+
+`compute_solution_cost()` also sorts and uses `math.fsum`, so the known cost drift is gone
+independently of the seed. Pinning covers the rest of the surface — any other aggregation
+or ordering-sensitive tie-break.
+
+**For a repeat study:** run the ladder with the default `PYTHONHASHSEED=0`, and if you want
+to bound harness noise, run one rung with `PYTHONHASHSEED=random` as a control. Any spread
+in that arm that is absent from the pinned arm is harness, not annealer.
+
+### 2.3c Phase attribution
+
+`va_memory_trace*.csv` plus `runtime.phase_peaks` carry per-phase host memory under nested
+labels (`preflight.pyqubo_compile` vs `solve.pyqubo_compile` — the preflight compiles every
+batch and the solve compiles it again). Two columns, deliberately distinct:
+
+- `rss_peak_mb` — sampled every 0.5 s. Draws the shape; can miss a spike between polls.
+- `vm_hwm_delta_self_mb` — exact rise in `/proc/self/status` VmHWM across the phase,
+  exclusive of nested phases. **This is the attribution**: these sum to the run's total
+  high-water rise. Linux only; reads 0.0 on macOS.
+
+### 2.3d Instance degeneracy — the hub-siting result is geometry, not optimisation
+
+`va_instance_geometry.py` (CPU, no card) measures how much siting freedom the instances
+actually offer. Both are near-total degenerate:
+
+| | 10 hubs | 20 hubs |
+|---|---:|---:|
+| demand rows | 3,207 | 5,996 |
+| rows with exactly 1 reachable hub (service radius) | **3,207 (100.0%)** | 5,731 (95.6%) |
+| rows with 2 or fewer | 100.0% | 100.0% |
+| max reachable hubs for any row | **1** | 2 |
+| best single hub's coverage | 13.4% | 8.8% |
+| hubs forced open (sole option for some row) | **10 of 10** | **20 of 20** |
+| rows unservable within the SLA radius | 638 (19.9%) | 874 (14.6%) |
+
+**No hub can be closed in either instance.** Every hub is the only reachable option for at
+least one demand row, so opening all of them is the only feasible answer. On the 10-hub
+instance *every row* has exactly one candidate — C1 has a single feasible option per row,
+so the assignment is fully determined too.
+
+This is validated against the runs, not asserted: the geometric floor on SLA violations
+matches `va_10hubs` exactly (638 = 638, 0 solver-attributable) and accounts for 92.7% of
+`va_20hubs` (874 of 943). Both runs opened exactly the forced number of hubs.
+
+**Consequence for the writeup.** `open_hubs = 10/10` and `20/20` carry no information about
+solution quality, and neither does the 91% fixed-cost share — it is fixed cost because
+every hub is forced open. Any hub-siting claim must be dropped or re-run on an instance
+where siting is a real decision (wider service radius, or hubs sited with overlapping
+coverage). What the runs *can* still speak to is assignment and stocking on the 20-hub
+instance, and the engineering results (scaling, memory, precision), which do not depend on
+siting freedom.
 
 ### 2.4 Demand pairs and solution shape
 `active_demand_pairs`, `assignments_count`, `stocked_pairs_count`, `open_hubs_count`,
@@ -229,6 +417,10 @@ Two mechanisms now, in `sbatch_scripts/va_env.sh` and `sbatch_scripts/va_par_acc
    which waits for the slurmdbd flush (polling, up to 3 min) and writes the real `MaxRSS` and a
    real `seff`. `afterany`, not `afterok`, because a job killed by OOM is the one whose memory
    matters most.
+
+`cgroup_peak_mb` is now ALSO read in-process by the solver (a Python port of
+`va_cgroup_peak()`) and lands in `summary.json` alongside the rest of the accounting, so it
+no longer lives only in a side TSV. The bash version stays as an independent cross-check.
 
 `slurm_mem_va.tsv` now has a header and a `Source` column (`in_job` vs `post_hoc`) so the
 provisional and final rows are never mixed. `va_par_launch.sh` submits the accounting job as

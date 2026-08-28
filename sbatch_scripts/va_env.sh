@@ -17,6 +17,23 @@
 # VA_CONDA_ENV=<name> overrides the conda env, default "qubo".
 
 # --- conda ----------------------------------------------------------------
+# --- reproducibility ------------------------------------------------------
+# PIN THE HASH SEED. Python randomises str/bytes hashing per process, so set and
+# dict iteration order differs between runs. Float addition is not associative,
+# so any sum taken off a set drifts in the last bits from one process to the
+# next. That was observed on the merged cost total (~2e-15 relative).
+#
+# compute_solution_cost() now sorts and uses math.fsum, which removes the known
+# instance, but this pins the whole surface: any future aggregation, and any
+# ordering-sensitive tie-break, stays identical run to run. In a repeat study
+# that separates ANNEALER variation from harness noise, an unpinned seed makes
+# the two indistinguishable.
+#
+# Must be set BEFORE the interpreter starts -- setting it inside Python is too
+# late. Overridable: run with PYTHONHASHSEED=random to deliberately MEASURE hash
+# sensitivity as a control arm.
+export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
+
 module purge
 # REQUIRED, and easy to forget: without it `source activate` does not exist and
 # the job silently runs on the system python, which is 3.6 on sfpga01n and

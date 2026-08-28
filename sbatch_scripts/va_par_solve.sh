@@ -54,6 +54,13 @@ OUTDIR="${VA_OUTDIR:-results/va_parallel}"
 
 echo ">>> batch ${SLURM_ARRAY_TASK_ID} of run ${RUN_NAME} (${DATASET})"
 
+# Pin hash-order determinism before the interpreter starts. Python randomises
+# str hashing per process, so set/dict iteration order -- and therefore any
+# float sum taken off a set -- varies between runs. See sbatch_scripts/va_env.sh
+# for the full rationale. Override with PYTHONHASHSEED=random to run a control
+# arm that deliberately measures hash sensitivity.
+export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
+
 python3 run_va_parallel_batches.py \
   --mode solve \
   --batch-id "${SLURM_ARRAY_TASK_ID}" \

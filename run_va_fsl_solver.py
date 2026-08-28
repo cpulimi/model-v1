@@ -112,6 +112,8 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import csv
 import gc
 import glob
 import json
@@ -120,13 +122,14 @@ import os
 import socket
 import statistics
 import sys
+import threading
 import time
 import tracemalloc
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 import pandas as pd
 
@@ -146,6 +149,12 @@ except ModuleNotFoundError:
 
 
 # VA hard specification, from the PoC manual.
+# Bumped when the MEANING of a memory field changes, so old result files stay
+# identifiable. v2: peak_memory_mb became pure RSS (was a tracemalloc figure in
+# the parallel merge, a blended max elsewhere); current_memory_mb became a real
+# current RSS reading (was a tracemalloc peak).
+MEMORY_ACCOUNTING_VERSION = 2
+
 VA_HARD_MAX_VARS = 100_000          # "Binary data size: up to 100 thousand bit"
 VA_DENSE_BYTES_PER_ENTRY = 4        # 32-bit resolution, dense full-connection matrix
 VA_MANUAL_REF = "NEC Vector Annealing PoC Manual, 2nd Edition (Nov 2022)"
@@ -155,6 +164,16 @@ VA_MANUAL_REF = "NEC Vector Annealing PoC Manual, 2nd Edition (Nov 2022)"
 VA_CANDIDATE_GLOB = "/opt/va/*/libexec/VectorAnnealing/python"
 # The physical VE cards appear as these device nodes on the executing host.
 VE_DEVICE_GLOBS = ("/dev/veslot*", "/dev/ve[0-9]*")
+
+# RUSAGE_* scope selectors, resolved once. resource is absent on Windows, so
+# these fall back to the POSIX values and the readers degrade to 0.0 there.
+try:
+    import resource as _resource  # type: ignore
+
+    _RUSAGE_SELF = _resource.RUSAGE_SELF
+    _RUSAGE_CHILDREN = _resource.RUSAGE_CHILDREN
+except Exception:  # pragma: no cover - Windows / restricted build
+    _RUSAGE_SELF, _RUSAGE_CHILDREN = 0, -1
 
 # Coefficients at or below this magnitude are dropped from the compiled QUBO.
 # The hand-rolled construction this replaced applied the same tolerance when
@@ -249,6 +268,23 @@ def money(x: float | int | None) -> str:
     return f"${float(x):,.2f}"
 
 
+def _proc_status_kb(field: str) -> float:
+    """One /proc/self/status field in kB, or 0.0. Linux only; never raises.
+
+    psutil is optional here (no new dependencies), so every /proc reader has to
+    stand on its own and degrade to 0.0 rather than blowing up a solve on a
+    platform that lacks the file.
+    """
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith(field + ":"):
+                    return float(line.split()[1])
+    except Exception:
+        pass
+    return 0.0
+
+
 def current_rss_mb() -> float:
     """Current resident set size in MB, or 0.0 if it cannot be read."""
     if psutil is not None:
@@ -256,6 +292,27 @@ def current_rss_mb() -> float:
             return float(psutil.Process().memory_info().rss) / (1024.0 * 1024.0)
         except Exception:
             pass
+    # psutil is optional; on Linux /proc carries the same number.
+    vmrss_kb = _proc_status_kb("VmRSS")
+    if vmrss_kb > 0:
+        return vmrss_kb / 1024.0
+    return 0.0
+
+
+def _rusage_maxrss_mb(who: int) -> float:
+    """ru_maxrss for one RUSAGE_* scope, in MB. 0.0 where unavailable.
+
+    ru_maxrss is bytes on macOS and kilobytes on Linux -- the single most common
+    way to get this measurement wrong by 1024x.
+    """
+    try:
+        import resource  # type: ignore
+
+        usage = float(resource.getrusage(who).ru_maxrss)
+        if usage > 0:
+            return usage / (1024.0 * 1024.0) if sys.platform == "darwin" else usage / 1024.0
+    except Exception:
+        pass
     return 0.0
 
 
@@ -267,20 +324,13 @@ def peak_rss_mb() -> float:
     is only the CURRENT value: because memory_report_mb() runs at the end of a
     run, after the batch QUBOs have been freed, using it silently understated
     peak memory by the size of the largest batch. On this workload memory is the
-    binding constraint (VA stores the problem densely), so that is the one
-    measurement that must not read low.
+    binding constraint, so that is the one measurement that must not read low.
 
-    ru_maxrss is bytes on macOS and kilobytes on Linux. peak_wset is used on
-    Windows, where getrusage does not exist.
+    peak_wset is used on Windows, where getrusage does not exist.
     """
-    try:
-        import resource  # type: ignore
-
-        usage = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        if usage > 0:
-            return usage / (1024.0 * 1024.0) if sys.platform == "darwin" else usage / 1024.0
-    except Exception:
-        pass
+    usage = _rusage_maxrss_mb(_RUSAGE_SELF)
+    if usage > 0:
+        return usage
 
     if psutil is not None:
         try:
@@ -296,34 +346,142 @@ def peak_rss_mb() -> float:
     return current_rss_mb()
 
 
-def peak_or_current_rss_mb() -> float:
-    """Backwards-compatible alias. Returns the true peak where available."""
-    return peak_rss_mb()
+def peak_rss_children_mb() -> float:
+    """Peak RSS of the LARGEST FINISHED CHILD process, in MB. 0.0 elsewhere.
 
+    NOT a sum. getrusage(RUSAGE_CHILDREN).ru_maxrss is the maximum over reaped
+    children, so two 1 GB children report 1 GB, not 2 GB. Reading it as a total
+    is the standard trap with this field.
 
-def memory_report_mb() -> tuple[float, float]:
-    """(peak_mb, current_mb). Peak is the true process high-water mark.
-
-    tracemalloc only sees Python allocations, so it misses numpy/pandas buffers
-    and anything the VA extension allocates; RSS covers all of it. The peak
-    therefore takes the max of the two, and current stays current.
+    0.0 IS THE EXPECTED VALUE HERE. Neither run_va_fsl_solver.py nor
+    run_va_parallel_batches.py contains subprocess, Popen, multiprocessing,
+    os.fork, concurrent.futures, os.system or os.popen -- this architecture
+    forks no children, and parallelism is achieved with separate SLURM array
+    tasks, each its own process tree. The field is recorded anyway so that a
+    non-zero reading is a loud signal that something new is spawning processes
+    and the host accounting needs revisiting.
     """
-    tracemalloc_current_mb = 0.0
-    tracemalloc_peak_mb = 0.0
+    return _rusage_maxrss_mb(_RUSAGE_CHILDREN)
+
+
+def vm_hwm_mb() -> float:
+    """Peak RSS from /proc/self/status VmHWM, in MB. Linux only; 0.0 elsewhere.
+
+    Same quantity as peak_rss_mb() but read straight from the kernel's mm
+    counter, which makes it cheap enough to sample at every phase boundary. It
+    is monotonic and exact, so a rise ACROSS a phase proves that phase advanced
+    the process high-water mark -- no polling race, no spike missed between two
+    samples. That is what makes phase attribution trustworthy; the background
+    sampler only draws the curve.
+    """
+    return _proc_status_kb("VmHWM") / 1024.0
+
+
+def _cgroup_memory_dirs() -> list[str]:
+    """Directories to search for this process's cgroup memory peak, leaf first.
+
+    Mirrors va_cgroup_peak() in sbatch_scripts/va_env.sh. The SLURM batch step
+    sits in a nested leaf (.../job_<id>/step_batch/user/task_0) while the
+    interesting total lives on an ancestor, so the whole chain is walked and the
+    max taken.
+    """
+    rel = ""
+    unified = True
     try:
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc_current_mb = current / (1024.0 * 1024.0)
-        tracemalloc_peak_mb = peak / (1024.0 * 1024.0)
+        with open("/proc/self/cgroup", "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
     except Exception:
-        pass
+        return []
 
-    current_mb = max(tracemalloc_current_mb, current_rss_mb())
-    peak_mb = max(tracemalloc_peak_mb, peak_rss_mb(), current_mb)
-    return peak_mb, current_mb
+    for line in lines:                      # cgroup v2: "0::<path>"
+        parts = line.split(":", 2)
+        if len(parts) == 3 and parts[1] == "":
+            rel = parts[2]
+            break
+    if not rel:                             # cgroup v1: "<n>:memory:<path>"
+        unified = False
+        for line in lines:
+            parts = line.split(":", 2)
+            if len(parts) == 3 and "memory" in parts[1].split(","):
+                rel = parts[2]
+                break
+    if not rel:
+        return []
+
+    base = ("/sys/fs/cgroup" + rel) if unified else ("/sys/fs/cgroup/memory" + rel)
+    dirs: list[str] = []
+    cur = base
+    while cur and cur not in ("/sys/fs/cgroup", "/", "."):
+        dirs.append(cur)
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    dirs.append("/sys/fs/cgroup" if unified else "/sys/fs/cgroup/memory")
+    return dirs
 
 
-def memory_breakdown_mb() -> dict[str, float]:
-    """Every memory figure separately, so a run can be diagnosed after the fact."""
+def cgroup_peak_mb() -> float:
+    """SLURM step peak memory from the cgroup, in MB. 0.0 if unreadable.
+
+    THE number to size --mem against: it covers the whole job step, every
+    process in it, not just this one. memory.peak is cgroup v2,
+    memory.max_usage_in_bytes is v1. Returns 0.0 and moves on off-cgroup (macOS,
+    a login node, a container without the controller) rather than raising.
+
+    sbatch_scripts/va_env.sh reads the same files from bash into
+    slurm_mem_va.tsv; that stays as an independent outside cross-check. This one
+    puts the number into summary.json where the rest of the accounting lives.
+    """
+    best = 0.0
+    for d in _cgroup_memory_dirs():
+        for name in ("memory.peak", "memory.max_usage_in_bytes"):
+            try:
+                with open(os.path.join(d, name), "r", encoding="utf-8") as fh:
+                    val = float(fh.read().strip())
+                if val > best:
+                    best = val
+            except Exception:
+                continue
+    return best / (1024.0 * 1024.0)
+
+
+def reproducibility_snapshot() -> dict[str, Any]:
+    """Is this run's hash order pinned? Recorded so a summary.json can say.
+
+    Python randomises str/bytes hashing per process unless PYTHONHASHSEED is
+    set, so set and dict iteration order differs between runs. Float addition is
+    not associative, so any sum taken off a set drifts in its last bits from one
+    process to the next -- observed at ~2e-15 relative on the merged cost total
+    before compute_solution_cost() was changed to sort and use math.fsum.
+
+    This matters most for a REPEAT STUDY, where run-to-run variation is supposed
+    to be attributable to the annealer. With an unpinned seed, annealer variation
+    and hash-order variation are not separable.
+
+    Two fields, because they can disagree: `python_hash_seed` is what the
+    environment asked for, `hash_randomization_active` is what the interpreter
+    actually did. The env var is read at interpreter startup, so exporting it
+    from inside Python has no effect and would make the first field lie -- the
+    second is the ground truth.
+    """
+    seed = os.environ.get("PYTHONHASHSEED")
+    randomized = bool(getattr(sys.flags, "hash_randomization", 1))
+    return {
+        "python_hash_seed": (seed if seed is not None else "<unset>"),
+        "hash_randomization_active": randomized,
+        "hash_order_deterministic": (not randomized),
+    }
+
+
+def memory_snapshot() -> dict[str, float]:
+    """Every host memory figure, separately, under a name that says what it is.
+
+    Single source of truth: both the sequential solver and the parallel driver
+    build their payloads from this, so the two paths cannot drift apart on what
+    a field means. Host figures only -- device memory lives in
+    ve_device_report() and the two are NEVER summed.
+    """
     tm_current = tm_peak = 0.0
     try:
         current, peak = tracemalloc.get_traced_memory()
@@ -334,9 +492,365 @@ def memory_breakdown_mb() -> dict[str, float]:
     return {
         "rss_current_mb": float(current_rss_mb()),
         "rss_peak_mb": float(peak_rss_mb()),
+        "vm_hwm_mb": float(vm_hwm_mb()),
+        "rss_peak_children_mb": float(peak_rss_children_mb()),
+        "cgroup_peak_mb": float(cgroup_peak_mb()),
+        # Python-object allocations ONLY. tracemalloc cannot see pandas or numpy
+        # buffers, the pyqubo compiled model, or anything the VectorAnnealing
+        # extension allocates -- which is most of this workload's footprint.
         "tracemalloc_current_mb": float(tm_current),
         "tracemalloc_peak_mb": float(tm_peak),
     }
+
+
+def peak_or_current_rss_mb() -> float:
+    """Backwards-compatible alias. Returns the true peak where available."""
+    return peak_rss_mb()
+
+
+def memory_report_mb() -> tuple[float, float]:
+    """(peak_mb, current_mb) -- both pure RSS, both host-side.
+
+    peak_mb is the process RSS high-water mark and NOTHING ELSE. It used to be
+    max(tracemalloc_peak, rss_peak, current), which made the returned quantity
+    undefined: not peak RSS and not peak Python heap, just whichever happened to
+    be largest. RSS dominated in practice so the value was usually right, but
+    "usually right by accident" is not a measurement. memory_snapshot() reports
+    the tracemalloc figures separately, which is where they belong.
+    """
+    return float(peak_rss_mb()), float(current_rss_mb())
+
+
+def memory_breakdown_mb() -> dict[str, float]:
+    """Every memory figure separately, so a run can be diagnosed after the fact."""
+    return memory_snapshot()
+
+
+# ---------------------------------------------------------------------------
+# Phase attribution for host memory
+# ---------------------------------------------------------------------------
+
+
+def clear_refs_resets_hwm() -> tuple[bool, str]:
+    """Can /proc/self/clear_refs reset VmHWM WITHOUT clobbering ru_maxrss?
+
+    Writing 5 to /proc/self/clear_refs is documented to reset the peak-RSS
+    counter, which would give exact per-phase peaks instead of deltas against a
+    running maximum. But the kernel derives ru_maxrss from the same hiwater_rss
+    that clear_refs clears, so on some kernels it resets BOTH -- and ru_maxrss
+    feeds peak_rss_mb(), the one number in this pipeline that must not read low.
+
+    So this is tested, never assumed: allocate, confirm VmHWM rose, clear, then
+    require that VmHWM fell AND ru_maxrss did not. Returns (safe, reason).
+    """
+    if not sys.platform.startswith("linux"):
+        return False, "not Linux; /proc/self/clear_refs does not exist"
+    try:
+        import mmap
+
+        before_hwm = vm_hwm_mb()
+        before_max = _rusage_maxrss_mb(_RUSAGE_SELF)
+        buf = mmap.mmap(-1, 256 * 1024 * 1024)
+        buf.write(b"\0" * (256 * 1024 * 1024))
+        risen_hwm = vm_hwm_mb()
+        risen_max = _rusage_maxrss_mb(_RUSAGE_SELF)
+        buf.close()
+        if risen_hwm <= before_hwm:
+            return False, "VmHWM did not rise during the probe allocation"
+
+        with open("/proc/self/clear_refs", "w", encoding="utf-8") as fh:
+            fh.write("5")
+
+        after_hwm = vm_hwm_mb()
+        after_max = _rusage_maxrss_mb(_RUSAGE_SELF)
+        if after_hwm >= risen_hwm:
+            return False, f"clear_refs did not reset VmHWM ({risen_hwm:,.1f} -> {after_hwm:,.1f} MB)"
+        if after_max < risen_max * 0.99:
+            return False, (
+                f"UNSAFE: clear_refs also reset getrusage ru_maxrss "
+                f"({risen_max:,.1f} -> {after_max:,.1f} MB); it would corrupt peak_rss_mb()"
+            )
+        return True, (
+            f"safe: VmHWM {risen_hwm:,.1f} -> {after_hwm:,.1f} MB, "
+            f"ru_maxrss held at {after_max:,.1f} MB"
+        )
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+class MemorySampler:
+    """Background RSS sampler with NESTED phase marks.
+
+    Two independent measurements, because they answer different questions and
+    must not be conflated:
+
+    * `rss_peak_mb` per phase comes from a daemon thread polling current RSS
+      every `interval_s`. Best-effort: it draws the SHAPE of the curve but can
+      miss a spike that opens and closes between two polls.
+    * `vm_hwm_delta_mb` per phase is the rise in /proc/self/status VmHWM across
+      the phase. VmHWM is monotonic and exact, so a non-zero delta PROVES that
+      phase advanced the process high-water mark. This is the attribution.
+
+    WHY NESTED. build_batch_plan() compiles every batch during preflight and
+    solve_va_batch() compiles again during the solve, hitting the same mark
+    sites in build_batch_model(). With flat labels the preflight numbers are
+    silently overwritten by the first batch's solve. Labels are therefore a
+    dotted path over the frame stack -- `preflight.pyqubo_compile` is a
+    different row from `solve.pyqubo_compile`.
+
+    Deltas are HIERARCHICAL: an outer phase's inclusive delta contains its
+    children's. `vm_hwm_delta_self_mb` is the exclusive figure (inclusive minus
+    what nested phases already claimed); sum THAT across phases, never the
+    inclusive column.
+    """
+
+    def __init__(self, interval_s: float = 0.5, clear_refs: bool = False) -> None:
+        self.interval_s = max(0.01, float(interval_s))
+        self.clear_refs = bool(clear_refs)
+        self._lock = threading.Lock()
+        self._stack: list[dict[str, Any]] = []
+        self._rows: list[tuple[float, str, int, float]] = []
+        self._phases: dict[str, dict[str, float]] = {}
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+        self._t0 = time.perf_counter()
+        self.batch_id: int | None = None
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def start(self) -> "MemorySampler":
+        if self._thread is not None:
+            return self
+        self._t0 = time.perf_counter()
+        self._stop.clear()
+        # Daemon: a hung interpreter shutdown must never be this thread's fault.
+        self._thread = threading.Thread(
+            target=self._run, name="va-memory-sampler", daemon=True
+        )
+        self._thread.start()
+        return self
+
+    def stop(self) -> "MemorySampler":
+        self._stop.set()
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join(timeout=max(2.0, self.interval_s * 4))
+        self._sample()
+        return self
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_s):
+            self._sample()
+
+    def _sample(self) -> None:
+        rss = current_rss_mb()
+        with self._lock:
+            label = self._stack[-1]["label"] if self._stack else "(unmarked)"
+            depth = len(self._stack)
+            self._rows.append((time.perf_counter() - self._t0, label, depth, rss))
+
+    # -- marks -------------------------------------------------------------
+
+    @contextlib.contextmanager
+    def phase(self, name: str) -> Iterator[None]:
+        """Enter a nested phase. Re-entering a label ACCUMULATES into it."""
+        self.push(name)
+        try:
+            yield
+        finally:
+            self.pop()
+
+    def push(self, name: str) -> str:
+        if self.clear_refs:
+            try:
+                with open("/proc/self/clear_refs", "w", encoding="utf-8") as fh:
+                    fh.write("5")
+            except Exception:
+                pass
+        with self._lock:
+            parent = self._stack[-1]["label"] if self._stack else ""
+            label = f"{parent}.{name}" if parent else str(name)
+            self._stack.append({
+                "label": label,
+                "t0": time.perf_counter(),
+                "hwm0": vm_hwm_mb(),
+                "child_claimed": 0.0,
+            })
+        self._sample()
+        return label
+
+    def pop(self) -> None:
+        self._sample()
+        with self._lock:
+            if not self._stack:
+                return
+            frame = self._stack.pop()
+            wall = time.perf_counter() - frame["t0"]
+            inclusive = max(0.0, vm_hwm_mb() - float(frame["hwm0"]))
+            # Exclusive: what THIS phase added beyond what its children claimed.
+            self_delta = max(0.0, inclusive - float(frame["child_claimed"]))
+            if self._stack:
+                self._stack[-1]["child_claimed"] += inclusive
+
+            acc = self._phases.setdefault(
+                frame["label"],
+                {"wall_seconds": 0.0, "vm_hwm_delta_mb": 0.0,
+                 "vm_hwm_delta_self_mb": 0.0, "entries": 0.0},
+            )
+            acc["wall_seconds"] += wall
+            acc["vm_hwm_delta_mb"] += inclusive
+            acc["vm_hwm_delta_self_mb"] += self_delta
+            acc["entries"] += 1.0
+
+    # -- results -----------------------------------------------------------
+
+    @property
+    def peak_mb(self) -> float:
+        with self._lock:
+            return max((r[3] for r in self._rows), default=0.0)
+
+    @property
+    def phase_peaks_mb(self) -> dict[str, float]:
+        """Inclusive sampled RSS peak per phase label."""
+        with self._lock:
+            rows = list(self._rows)
+            labels = set(self._phases) | {r[1] for r in rows}
+        out: dict[str, float] = {}
+        for label in labels:
+            if label == "(unmarked)":
+                continue
+            prefix = label + "."
+            vals = [r[3] for r in rows if r[1] == label or r[1].startswith(prefix)]
+            if vals:
+                out[label] = float(max(vals))
+        return out
+
+    def phase_summary(self) -> list[dict[str, Any]]:
+        """One row per phase, most memory-responsible first."""
+        peaks = self.phase_peaks_mb
+        with self._lock:
+            phases = {k: dict(v) for k, v in self._phases.items()}
+        rows = [
+            {
+                "phase": label,
+                "depth": label.count(".") + 1,
+                "entries": int(acc["entries"]),
+                "wall_seconds": round(float(acc["wall_seconds"]), 4),
+                "rss_peak_mb": round(float(peaks.get(label, 0.0)), 3),
+                "vm_hwm_delta_mb": round(float(acc["vm_hwm_delta_mb"]), 3),
+                "vm_hwm_delta_self_mb": round(float(acc["vm_hwm_delta_self_mb"]), 3),
+            }
+            for label, acc in phases.items()
+        ]
+        rows.sort(key=lambda r: (-r["vm_hwm_delta_self_mb"], -r["rss_peak_mb"], r["phase"]))
+        return rows
+
+    def to_csv(self, path: Path | str) -> Path | None:
+        """Write the raw time series. Returns the path, or None if it failed."""
+        try:
+            out = Path(path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with self._lock:
+                rows = list(self._rows)
+            with open(out, "w", newline="", encoding="utf-8") as fh:
+                w = csv.writer(fh)
+                w.writerow(["t_seconds", "phase", "depth", "rss_mb", "batch_id"])
+                for t, label, depth, rss in rows:
+                    w.writerow([f"{t:.4f}", label, depth, f"{rss:.3f}",
+                                "" if self.batch_id is None else int(self.batch_id)])
+            return out
+        except Exception as exc:
+            print(f"  WARNING: could not write memory trace to {path}: "
+                  f"{type(exc).__name__}: {exc}", flush=True)
+            return None
+
+    def print_report(self, title: str = "HOST MEMORY BY PHASE") -> None:
+        rows = self.phase_summary()
+        if not rows:
+            return
+        print("\n" + "=" * 92, flush=True)
+        print(title, flush=True)
+        print("=" * 92, flush=True)
+        print(f"  {'phase':<34} {'n':>3} {'wall s':>9} {'RSS peak MB':>12} "
+              f"{'HWM+ MB':>9} {'HWM+ self':>10}", flush=True)
+        for r in rows:
+            print(f"  {r['phase']:<34} {r['entries']:>3} {r['wall_seconds']:>9,.2f} "
+                  f"{r['rss_peak_mb']:>12,.1f} {r['vm_hwm_delta_mb']:>9,.1f} "
+                  f"{r['vm_hwm_delta_self_mb']:>10,.1f}", flush=True)
+        if vm_hwm_mb() <= 0.0:
+            print("  NOTE: VmHWM is unavailable off Linux, so the HWM columns read 0.0.",
+                  flush=True)
+            print("        Use RSS peak (sampled) for attribution on this platform.", flush=True)
+        else:
+            top = max(rows, key=lambda r: r["vm_hwm_delta_self_mb"])
+            if top["vm_hwm_delta_self_mb"] > 0:
+                print(f"\n  Host peak is driven by: {top['phase']} "
+                      f"(+{top['vm_hwm_delta_self_mb']:,.1f} MB of the process high-water mark)",
+                      flush=True)
+        # Preflight compiles every batch and the solve compiles it again; the
+        # trace measures that duplication for free.
+        pre = sum(r["wall_seconds"] for r in rows if r["phase"].startswith("preflight"))
+        sol = sum(r["wall_seconds"] for r in rows
+                  if r["phase"].startswith("solve.pyqubo") or r["phase"].startswith("solve.to_qubo"))
+        if pre > 0 and sol > 0:
+            print(f"\n  Double compile: preflight {pre:,.2f}s vs solve-side QUBO build "
+                  f"{sol:,.2f}s -- build_batch_plan() compiles every batch, then "
+                  f"solve_va_batch() compiles it again.", flush=True)
+        print("=" * 92, flush=True)
+
+
+# The active sampler, if any. A module-level handle keeps the mark sites from
+# having to thread a parameter through solve_va_batch -> va_sample_with_retries
+# -> va_sample_once, and makes phase() a free no-op under --dry-run and
+# --no-memory-trace instead of a branch at every call site.
+_ACTIVE_SAMPLER: MemorySampler | None = None
+
+
+def set_active_sampler(sampler: MemorySampler | None) -> None:
+    global _ACTIVE_SAMPLER
+    _ACTIVE_SAMPLER = sampler
+
+
+def active_sampler() -> MemorySampler | None:
+    return _ACTIVE_SAMPLER
+
+
+@contextlib.contextmanager
+def phase(name: str) -> Iterator[None]:
+    """Mark a memory phase. No-op when no sampler is running."""
+    sampler = _ACTIVE_SAMPLER
+    if sampler is None:
+        yield
+        return
+    with sampler.phase(name):
+        yield
+
+
+def start_memory_sampler(args: argparse.Namespace, batch_id: int | None = None) -> MemorySampler | None:
+    """Build, arm and register a sampler from the CLI flags. None when disabled."""
+    if bool(getattr(args, "no_memory_trace", False)):
+        return None
+    clear_refs = False
+    if bool(getattr(args, "memory_trace_clear_refs", False)):
+        safe, reason = clear_refs_resets_hwm()
+        clear_refs = safe
+        print(f"  memory trace: clear_refs self-test -> "
+              f"{'ENABLED' if safe else 'DISABLED'} ({reason})", flush=True)
+    sampler = MemorySampler(
+        interval_s=float(getattr(args, "memory_trace_interval", 0.5)),
+        clear_refs=clear_refs,
+    )
+    sampler.batch_id = batch_id
+    sampler.start()
+    set_active_sampler(sampler)
+    return sampler
+
+
+def stop_memory_sampler(sampler: MemorySampler | None) -> None:
+    if sampler is None:
+        return
+    sampler.stop()
+    set_active_sampler(None)
 
 
 def human_bytes(n: int) -> str:
@@ -571,21 +1085,34 @@ def compute_solution_cost(
     stocked_set = set((str(j), str(k)) for j, k in stocked_pairs)
     open_set = set(str(j) for j in open_hubs)
 
-    inventory_cost = sum(float(data["P"].get(k, 0.0)) for _, k in stocked_set)
+    # DETERMINISM: iterate SORTED and accumulate with math.fsum. Float addition
+    # is not associative, and set iteration order over strings depends on
+    # PYTHONHASHSEED, which is randomised per process -- so summing straight off
+    # a set made the same inputs produce a different total on every run (observed
+    # at ~2e-15 relative on assignment_transport_cost). Numerically irrelevant,
+    # but it made exact-equality regression tests impossible, which is how an
+    # accounting change gets caught. fsum is also exactly rounded, so the result
+    # no longer depends on ordering at all.
+    stocked_sorted = sorted(stocked_set)
+    inventory_cost = math.fsum(float(data["P"].get(k, 0.0)) for _, k in stocked_sorted)
     fixed_open_cost = float(scalar["S_lim"]) * float(len(open_set))
-    transfer_cost = sum((1 - int(data["T"].get(j, 0))) * float(scalar["C"]) for j, _ in stocked_set)
+    transfer_cost = math.fsum(
+        (1 - int(data["T"].get(j, 0))) * float(scalar["C"]) for j, _ in stocked_sorted
+    )
 
     by_hub: dict[str, int] = defaultdict(int)
-    for j, _ in stocked_set:
+    for j, _ in stocked_sorted:
         by_hub[j] += 1
     overflow_units = sum(max(0, cnt - int(scalar["L"])) for cnt in by_hub.values())
     overflow_cost = float(scalar["S_var"]) * float(overflow_units)
 
-    transport_cost = 0.0
-    for i, j, k in assignment_set:
-        transport_cost += assignment_cost(i, j, k, data)["assignment_cost"]
+    transport_cost = math.fsum(
+        assignment_cost(i, j, k, data)["assignment_cost"]
+        for i, j, k in sorted(assignment_set)
+    )
 
-    total = inventory_cost + fixed_open_cost + overflow_cost + transfer_cost + transport_cost
+    total = math.fsum([inventory_cost, fixed_open_cost, overflow_cost,
+                       transfer_cost, transport_cost])
     return {
         "total_cost": float(total),
         "inventory_cost": float(inventory_cost),
@@ -770,7 +1297,7 @@ def final_results_block(summary: dict[str, Any], title: str) -> str:
         f"  structural violations:      {audit['total_structural_violations']:,}",
         f"  SLA distance violations:    {audit['sla_distance_violations']:,}",
         f"  wall time:                  {rt['wall_seconds']:,.2f}s",
-        f"  peak/current memory:        {rt['peak_memory_mb']:,.1f}/{rt['current_memory_mb']:,.1f} MB",
+        f"  peak/current host RSS:      {rt['peak_memory_mb']:,.1f}/{rt['current_memory_mb']:,.1f} MB",
         f"  output folder:              {summary['output_dir']}",
         "=" * 76,
     ]
@@ -1177,11 +1704,13 @@ def build_batch_model(batch_df: pd.DataFrame, data: dict[str, Any], args: argpar
                 "encoding. Use --c4-mode auto/off or implement a bounded inequality slack formulation."
             )
 
-    H = sum(terms)
+    with phase("pyqubo_express"):
+        H = sum(terms)
     express_seconds = time.perf_counter() - t_express
 
     t_compile = time.perf_counter()
-    model = H.compile()
+    with phase("pyqubo_compile"):
+        model = H.compile()
     compile_seconds = time.perf_counter() - t_compile
 
     del terms, H, y_var, x_var
@@ -1211,12 +1740,16 @@ def qubo_from_model(
         PLACEHOLDER_C2: float(penalties["c2"]),
         PLACEHOLDER_C3: float(penalties["c3"]),
     }
-    raw_q, offset = batch_model.model.to_qubo(feed_dict=feed)
-    Q = {
-        (str(u), str(v)): float(coeff)
-        for (u, v), coeff in raw_q.items()
-        if abs(float(coeff)) > QUBO_ZERO_TOLERANCE
-    }
+    with phase("to_qubo"):
+        raw_q, offset = batch_model.model.to_qubo(feed_dict=feed)
+        # float() here is a Python float, i.e. float64, while VA computes in
+        # fp32 -- the reason recompute_energy_float64() exists. Q stays SPARSE:
+        # nothing on the host ever materialises a num_vars x num_vars matrix.
+        Q = {
+            (str(u), str(v)): float(coeff)
+            for (u, v), coeff in raw_q.items()
+            if abs(float(coeff)) > QUBO_ZERO_TOLERANCE
+        }
     return Q, float(offset)
 
 
@@ -1664,6 +2197,185 @@ def ve_card_count() -> int:
     return len(indices)
 
 
+# Candidate sources for VE device memory. NONE of these is confirmed to exist:
+# they are the plausible names to probe for, and va_probe.py --device-memory is
+# what establishes which (if any) are real on a given install. Every consumer
+# records WHICH source produced a number, so a value can always be traced back.
+VE_SYSFS_ROOTS = ("/sys/class/ve", "/sys/devices/platform/ve")
+VE_CAPACITY_FILE_HINTS = (
+    "memory_size", "mem_size", "memory_capacity", "hbm_size", "size", "total_memory",
+)
+VE_USAGE_FILE_HINTS = (
+    "memory_used", "mem_used", "used_memory", "memory_usage", "peak_memory",
+)
+# Attributes a VA result/stats object might expose. va_probe.py:smoke_test
+# already prints `memory_usage`, which is the likeliest of these to be real.
+VE_RESULT_MEMORY_ATTRS = (
+    "memory_usage", "memory", "mem_usage", "device_memory", "used_memory", "memory_bytes",
+)
+
+
+def _read_int_file(path: str) -> int | None:
+    """One small integer from /sys or /proc. None on anything unexpected."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read().strip().split()[0]
+        return int(float(text))
+    except Exception:
+        return None
+
+
+def _scan_ve_sysfs(hints: tuple[str, ...]) -> tuple[int | None, str]:
+    """Largest integer found in any file matching `hints` under the VE sysfs roots.
+
+    Returns (value, source_path). Values below 1 MiB are treated as a unit that
+    is not bytes (sysfs sometimes reports MB or KB) and are scaled up, but the
+    source path is always recorded so the assumption is auditable rather than
+    silent.
+    """
+    best: int | None = None
+    src = ""
+    for root in VE_SYSFS_ROOTS:
+        if not os.path.isdir(root):
+            continue
+        try:
+            for dirpath, _dirnames, filenames in os.walk(root):
+                for name in filenames:
+                    if name not in hints:
+                        continue
+                    val = _read_int_file(os.path.join(dirpath, name))
+                    if val is None or val <= 0:
+                        continue
+                    if best is None or val > best:
+                        best, src = val, os.path.join(dirpath, name)
+        except Exception:
+            continue
+    return best, src
+
+
+def ve_device_report(
+    predicted_dense_bytes: int = 0,
+    va_results: Any = None,
+    hbm_gb_override: float | None = None,
+) -> dict[str, Any]:
+    """What the CARD's memory actually is, versus what we predicted it would be.
+
+    Everything device-side in this solver has been analytical -- dense_matrix_
+    bytes() plus the density/waste stats. That arithmetic is sound and matches
+    the PoC manual's tiers, but it is a PREDICTION. This function reports what,
+    if anything, on the node can be OBSERVED, and keeps the two apart.
+
+    THE RULE: observed_minus_predicted_bytes is None unless
+    device_peak_is_measured is True. A computed number is never emitted in a
+    field whose name says observed. If nothing on this install reads out device
+    memory, the report says so in `note` and carries capacity + prediction only.
+
+    Fails soft everywhere: off the VE node every source is simply absent, so
+    --dry-run keeps working on a CPU node.
+    """
+    report: dict[str, Any] = {
+        "hbm_capacity_bytes": None,
+        "hbm_capacity_source": "unknown",
+        "observed_peak_device_bytes": None,
+        "device_peak_source": "none_available",
+        "device_peak_is_measured": False,
+        "predicted_dense_bytes": int(predicted_dense_bytes),
+        "observed_minus_predicted_bytes": None,
+        "ve_devices_visible": [],
+        "ve_card_count": 0,
+        "note": "",
+    }
+
+    try:
+        report["ve_devices_visible"] = visible_ve_devices()
+        report["ve_card_count"] = int(ve_card_count())
+    except Exception:
+        pass
+
+    # --- capacity ---------------------------------------------------------
+    if hbm_gb_override is not None and float(hbm_gb_override) > 0:
+        report["hbm_capacity_bytes"] = int(float(hbm_gb_override) * (1024 ** 3))
+        report["hbm_capacity_source"] = "user_supplied"
+    else:
+        val, src = _scan_ve_sysfs(VE_CAPACITY_FILE_HINTS)
+        if val is not None:
+            report["hbm_capacity_bytes"] = int(val)
+            report["hbm_capacity_source"] = f"sysfs:{src}"
+
+    # --- observed peak ----------------------------------------------------
+    # 1) whatever the VA result/stats objects carry.
+    if va_results:
+        try:
+            items = va_results if isinstance(va_results, (list, tuple)) else [va_results]
+            best = None
+            attr_used = ""
+            for item in items:
+                for attr in VE_RESULT_MEMORY_ATTRS:
+                    raw = getattr(item, attr, None)
+                    if raw is None or callable(raw):
+                        continue
+                    try:
+                        num = int(float(raw))
+                    except Exception:
+                        continue
+                    if num > 0 and (best is None or num > best):
+                        best, attr_used = num, attr
+            if best is not None:
+                report["observed_peak_device_bytes"] = int(best)
+                report["device_peak_source"] = f"VectorAnnealing result.{attr_used}"
+                report["device_peak_is_measured"] = True
+        except Exception:
+            pass
+
+    # 2) sysfs usage counters, if the install exposes any.
+    if not report["device_peak_is_measured"]:
+        val, src = _scan_ve_sysfs(VE_USAGE_FILE_HINTS)
+        if val is not None:
+            report["observed_peak_device_bytes"] = int(val)
+            report["device_peak_source"] = f"sysfs:{src}"
+            report["device_peak_is_measured"] = True
+
+    if report["device_peak_is_measured"] and int(predicted_dense_bytes) > 0:
+        report["observed_minus_predicted_bytes"] = (
+            int(report["observed_peak_device_bytes"]) - int(predicted_dense_bytes)
+        )
+    else:
+        report["note"] = (
+            "No runtime device readout available on this install: device memory is "
+            "PREDICTED (dense_matrix_bytes), never measured. Capacity and prediction "
+            "are recorded; observed_peak_device_bytes is null by design. Run "
+            "`va_probe.py --device-memory` on the VE node to inventory what exists."
+        )
+    if report["hbm_capacity_source"] == "unknown":
+        report["note"] = (report["note"] + " ").strip() + (
+            " HBM capacity is also unreadable here; pass --ve-hbm-gb to record it explicitly."
+        )
+    return report
+
+
+def print_ve_device_report(report: dict[str, Any]) -> None:
+    """Device memory block. Says loudly when a number is predicted, not measured."""
+    print("\n  VE DEVICE MEMORY (card-side; never added to host RSS)", flush=True)
+    cap = report.get("hbm_capacity_bytes")
+    print(f"    HBM capacity:        "
+          f"{human_bytes(cap) if cap else '<unknown>'}  [{report.get('hbm_capacity_source')}]",
+          flush=True)
+    print(f"    predicted (dense):   {human_bytes(int(report.get('predicted_dense_bytes') or 0))}",
+          flush=True)
+    if report.get("device_peak_is_measured"):
+        obs = int(report["observed_peak_device_bytes"])
+        delta = report.get("observed_minus_predicted_bytes")
+        print(f"    OBSERVED peak:       {human_bytes(obs)}  "
+              f"[{report.get('device_peak_source')}]", flush=True)
+        if delta is not None:
+            sign = "+" if delta >= 0 else "-"
+            print(f"    observed - predicted: {sign}{human_bytes(abs(int(delta)))}", flush=True)
+    else:
+        print("    OBSERVED peak:       <none: no runtime device readout on this install>",
+              flush=True)
+        print(f"    note: {report.get('note')}", flush=True)
+
+
 def import_vector_annealing() -> Any:
     """Import the local VectorAnnealing module, or exit with actionable guidance.
 
@@ -1793,6 +2505,121 @@ def dense_matrix_bytes(num_vars: int) -> int:
     full coupling at 100k bits; 70000^2 * 4 B = 19.6 GB matches its 24 GB tier.
     """
     return int(num_vars) * int(num_vars) * VA_DENSE_BYTES_PER_ENTRY
+
+
+def host_device_crossover_vars(
+    points: list[tuple[int, float]],
+) -> dict[str, Any]:
+    """Where VA's dense matrix overtakes host RSS, from a REGRESSION over batches.
+
+    `points` is [(total_vars, host_rss_peak_mb), ...] -- one pair PER BATCH, both
+    values from the SAME batch. Pairing a max over one list with a max over
+    another silently combines different batches and produces a number that
+    describes no run that ever happened.
+
+    Device cost is dense_matrix_bytes(N) = 4N^2, quadratic and exact. Host cost
+    is modelled as a + b*N: host RSS has a real FIXED INTERCEPT (interpreter,
+    pandas, the loaded instance) that a proportional model forced through the
+    origin cannot express -- and getting the intercept wrong moves the crossover
+    a lot. Crossing 4N^2/2^20 = a + bN gives
+
+        N = (b + sqrt(b^2 + 4*a/K)) / (2/K),   K = 2^20 / 4
+
+    Returns a dict that is ALWAYS shaped the same, with `crossover_vars` None and
+    a `reason` when there is not enough data. Fewer than 3 batches cannot support
+    a two-parameter fit, so it refuses rather than extrapolating: with 2 points
+    the line is exact and unfalsifiable, with 1 it is not a line at all.
+
+    NOTE for this repo: every VA run recorded so far is a SINGLE batch, so this
+    returns None for all of them. That is the correct answer, not a gap to paper
+    over -- a one-batch run contains no information about how host RSS scales.
+    """
+    out: dict[str, Any] = {
+        "crossover_vars": None,
+        "n_points": len(points or []),
+        "host_fit_intercept_mb": None,
+        "host_fit_slope_mb_per_var": None,
+        "host_fit_r_squared": None,
+        "vars_range": None,
+        "reason": "",
+    }
+    pts = [
+        (float(n), float(m)) for n, m in (points or [])
+        if n and float(n) > 0 and m and float(m) > 0
+    ]
+    out["n_points"] = len(pts)
+    if len(pts) < 3:
+        out["reason"] = (
+            f"need >= 3 batches with paired (total_vars, rss_peak_mb) to fit an "
+            f"intercept and a slope; got {len(pts)}. No crossover is reported: a "
+            f"1- or 2-point fit is unfalsifiable, and the intercept it invents "
+            f"moves the answer by thousands of variables."
+        )
+        return out
+
+    xs = [n for n, _ in pts]
+    ys = [m for _, m in pts]
+    if len(set(xs)) < 2:
+        out["reason"] = "all batches have the same total_vars; slope is undetermined"
+        return out
+
+    n = float(len(pts))
+    mx, my = math.fsum(xs) / n, math.fsum(ys) / n
+    sxx = math.fsum((x - mx) ** 2 for x in xs)
+    sxy = math.fsum((x - mx) * (y - my) for x, y in pts)
+    if sxx <= 0:
+        out["reason"] = "degenerate spread in total_vars"
+        return out
+    slope = sxy / sxx
+    intercept = my - slope * mx
+
+    ss_tot = math.fsum((y - my) ** 2 for y in ys)
+    ss_res = math.fsum((y - (intercept + slope * x)) ** 2 for x, y in pts)
+    out["host_fit_slope_mb_per_var"] = float(slope)
+    out["host_fit_intercept_mb"] = float(intercept)
+    out["host_fit_r_squared"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else None
+    out["vars_range"] = [int(min(xs)), int(max(xs))]
+
+    # 4N^2 / 2^20 = intercept + slope*N  ->  N^2/K - slope*N - intercept = 0
+    K = (1024.0 * 1024.0) / float(VA_DENSE_BYTES_PER_ENTRY)
+    disc = slope * slope + 4.0 * intercept / K
+    if disc < 0 or intercept < 0:
+        out["reason"] = (
+            f"fitted host model (intercept {intercept:,.1f} MB, slope "
+            f"{slope:.6f} MB/var) has no positive crossover"
+        )
+        return out
+    root = (slope + math.sqrt(disc)) / (2.0 / K)
+    if root <= 0:
+        out["reason"] = "no positive root"
+        return out
+    out["crossover_vars"] = int(round(root))
+    inside = min(xs) <= root <= max(xs)
+    out["reason"] = (
+        f"fit over {int(n)} batches spanning {int(min(xs)):,}-{int(max(xs)):,} vars"
+        + ("" if inside else "; crossover is EXTRAPOLATED beyond the measured range")
+    )
+    return out
+
+
+def host_rss_points_from_stats(va_stats: list[dict[str, Any]]) -> list[tuple[int, float]]:
+    """Paired (total_vars, host RSS peak) per batch. Both values from ONE batch.
+
+    Prefers the per-batch host_rss_peak_mb recorded by memory_snapshot(); falls
+    back to the older flat rss_peak_mb key so pre-existing checkpoints still
+    contribute. Batches missing either half are dropped rather than paired with a
+    value from a different batch.
+    """
+    points: list[tuple[int, float]] = []
+    for s in va_stats or []:
+        try:
+            n = int(s.get("total_vars") or 0)
+            mb = float(s.get("host_rss_peak_mb") or s.get("rss_peak_mb") or 0.0)
+        except Exception:
+            continue
+        if n > 0 and mb > 0:
+            points.append((n, mb))
+    return points
 
 
 def build_batch_plan(
@@ -2104,8 +2931,14 @@ def va_sample_once(
     if one_hot_list:
         model_kwargs["onehot"] = one_hot_list
 
-    va_model = VectorAnnealing.model(Q, float(offset), **model_kwargs)
-    sampler = VectorAnnealing.sampler()
+    # Split from the sample() call deliberately: model() is where a sparse dict
+    # would be densified if that happened host-side, sample() is the card
+    # transfer and the anneal. Which of the two moves the host high-water mark
+    # is what decides whether host memory is a QUBO-construction problem or a
+    # card-transfer problem, and they have different fixes. Do not merge these.
+    with phase("va_model_build"):
+        va_model = VectorAnnealing.model(Q, float(offset), **model_kwargs)
+        sampler = VectorAnnealing.sampler()
 
     sample_kwargs: dict[str, Any] = {
         "num_reads": int(num_reads),
@@ -2124,7 +2957,8 @@ def va_sample_once(
         sample_kwargs["seed"] = int(seed)
 
     t0 = time.perf_counter()
-    result = sampler.sample(va_model, **sample_kwargs)
+    with phase("va_sample"):
+        result = sampler.sample(va_model, **sample_kwargs)
     elapsed = time.perf_counter() - t0
 
     results = list(result) if not isinstance(result, list) else result
@@ -2234,8 +3068,9 @@ def solve_va_batch(
 
     print("  [1/3] Formulating and compiling the PyQUBO model...", flush=True)
     t0 = time.time()
-    batch_model = build_batch_model(batch_df, data, args)
-    qubo_meta = build_qubo_for_batch(batch_df, data, args, batch_model=batch_model)
+    with phase("solve"):
+        batch_model = build_batch_model(batch_df, data, args)
+        qubo_meta = build_qubo_for_batch(batch_df, data, args, batch_model=batch_model)
     build_seconds = time.time() - t0
     Q = qubo_meta["Q"]
     offset = float(qubo_meta["offset"])
@@ -2293,6 +3128,13 @@ def solve_va_batch(
         + (f" (max {max_iterations} iters, growth {growth})" if adaptive else ""),
         flush=True,
     )
+
+    # The sampling loop below spans the rest of the batch, so the "solve" frame
+    # is pushed explicitly here and popped in the finally at the end rather than
+    # wrapping several hundred lines in a with-block.
+    _sampler = active_sampler()
+    if _sampler is not None:
+        _sampler.push("solve")
 
     best_eval: dict[str, Any] | None = None
     precision_rows: list[dict[str, Any]] = []
@@ -2367,53 +3209,54 @@ def solve_va_batch(
                 )
 
             t_eval = time.time()
-            repeat_evals: list[dict[str, Any]] = []
-            for r in results:
-                spin = dict(getattr(r, "spin", {}) or {})
-                va_energy = float(getattr(r, "energy", 0.0))
-                constraint_flag = getattr(r, "constraint", None)
+            with phase("sample_eval"):
+                repeat_evals: list[dict[str, Any]] = []
+                for r in results:
+                    spin = dict(getattr(r, "spin", {}) or {})
+                    va_energy = float(getattr(r, "energy", 0.0))
+                    constraint_flag = getattr(r, "constraint", None)
 
-                recomputed = recompute_energy_float64(Q, spin, offset=va_offset)
-                precision_rows.append(
-                    {
-                        "batch_id": int(batch.batch_id),
-                        "read_index": int(read_index),
-                        "num_vars": int(total_vars),
-                        "va_reported_energy": float(va_energy),
-                        "recomputed_energy": float(recomputed),
-                        "abs_diff": float(abs(va_energy - recomputed)),
-                        "rel_diff": float(relative_difference(va_energy, recomputed)),
-                        "qubo_offset": float(offset),
-                        "va_offset_applied": float(va_offset),
-                        "constraint_ok": constraint_flag if constraint_flag is None else bool(constraint_flag),
-                    }
-                )
-                read_index += 1
-
-                constraint_total_count += 1
-                if constraint_flag is True:
-                    constraint_ok_count += 1
-
-                # Identical accounting to the OpenJij path: VA's own reported
-                # energy is fed to evaluate_sample, exactly as OpenJij's is.
-                ev = evaluate_sample(spin, va_energy, qubo_meta, data)
-                repeat_evals.append(ev)
-                iter_evals.append(ev)
-
-                key = (ev["total_violations"], ev["c1"], ev["c2"], ev["c3"], ev["cost"], ev["energy"])
-                if best_eval is None:
-                    best_eval = ev
-                else:
-                    old_key = (
-                        best_eval["total_violations"],
-                        best_eval["c1"],
-                        best_eval["c2"],
-                        best_eval["c3"],
-                        best_eval["cost"],
-                        best_eval["energy"],
+                    recomputed = recompute_energy_float64(Q, spin, offset=va_offset)
+                    precision_rows.append(
+                        {
+                            "batch_id": int(batch.batch_id),
+                            "read_index": int(read_index),
+                            "num_vars": int(total_vars),
+                            "va_reported_energy": float(va_energy),
+                            "recomputed_energy": float(recomputed),
+                            "abs_diff": float(abs(va_energy - recomputed)),
+                            "rel_diff": float(relative_difference(va_energy, recomputed)),
+                            "qubo_offset": float(offset),
+                            "va_offset_applied": float(va_offset),
+                            "constraint_ok": constraint_flag if constraint_flag is None else bool(constraint_flag),
+                        }
                     )
-                    if key < old_key:
+                    read_index += 1
+
+                    constraint_total_count += 1
+                    if constraint_flag is True:
+                        constraint_ok_count += 1
+
+                    # Identical accounting to the OpenJij path: VA's own reported
+                    # energy is fed to evaluate_sample, exactly as OpenJij's is.
+                    ev = evaluate_sample(spin, va_energy, qubo_meta, data)
+                    repeat_evals.append(ev)
+                    iter_evals.append(ev)
+
+                    key = (ev["total_violations"], ev["c1"], ev["c2"], ev["c3"], ev["cost"], ev["energy"])
+                    if best_eval is None:
                         best_eval = ev
+                    else:
+                        old_key = (
+                            best_eval["total_violations"],
+                            best_eval["c1"],
+                            best_eval["c2"],
+                            best_eval["c3"],
+                            best_eval["cost"],
+                            best_eval["energy"],
+                        )
+                        if key < old_key:
+                            best_eval = ev
             eval_seconds += time.time() - t_eval
 
             energies = [float(e["energy"]) for e in repeat_evals]
@@ -2530,6 +3373,9 @@ def solve_va_batch(
                 flush=True,
             )
 
+    if _sampler is not None:
+        _sampler.pop()
+
     if best_eval is None:
         raise RuntimeError(f"VA batch {batch.batch_id}: no sample was selected")
 
@@ -2555,10 +3401,27 @@ def solve_va_batch(
         f"({final_density['dense_waste_factor']:,.0f}x)",
         flush=True,
     )
+    # Device memory: prediction always, observation only if this install has any
+    # source for it. `results` is the last sample's result objects, which is
+    # where a per-run device figure would surface if VA exposes one at all.
+    device_report = ve_device_report(
+        predicted_dense_bytes=int(dense_matrix_bytes(total_vars)),
+        va_results=locals().get("results"),
+        hbm_gb_override=getattr(args, "ve_hbm_gb", None),
+    )
+    print_ve_device_report(device_report)
+
     va_stats = {
         "batch_id": int(batch.batch_id),
         "total_vars": int(total_vars),
         "dense_matrix_bytes": int(dense_matrix_bytes(total_vars)),
+        # Host memory. Kept in fields distinct from every device figure above;
+        # the two are separate resources and are NEVER summed.
+        **{f"host_{k}": v for k, v in memory_snapshot().items()},
+        "ve_device": device_report,
+        "phase_peaks": (
+            active_sampler().phase_summary() if active_sampler() is not None else []
+        ),
         "matrix_density": float(final_density["matrix_density"]),
         "nonzero_cells": int(final_density["nonzero_cells"]),
         "avg_couplings_per_var": float(final_density["avg_couplings_per_var"]),
@@ -2647,8 +3510,12 @@ def va_batch_summary_dataframe(
 ) -> pd.DataFrame:
     """batch_summary_dataframe's columns plus the VA-specific ones."""
     base = batch_summary_dataframe(results)
+    # Nested structures (per-phase rows, the device report) go to summary.json
+    # and the trace CSV; a dict rendered into a CSV cell is unreadable and
+    # unparseable. The scalar host_* memory fields DO belong here.
+    nested = {"repeat_records", "phase_peaks", "ve_device"}
     extra = pd.DataFrame(
-        [{k: v for k, v in s.items() if k != "repeat_records"} for s in va_stats]
+        [{k: v for k, v in s.items() if k not in nested} for s in va_stats]
     )
     if base.empty or extra.empty:
         return base
@@ -2777,24 +3644,27 @@ def print_va_header(
 
 def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     tracemalloc.start()
+    sampler = start_memory_sampler(args)
     start = time.perf_counter()
 
-    data = load_problem_data(
-        args.dataset_dir,
-        max_service_miles_override=args.max_service_miles,
-        penalty_start_miles_override=args.penalty_start_miles,
-        top_hubs_per_zip=None if int(args.top_hubs_per_zip) < 0 else int(args.top_hubs_per_zip),
-        max_parts_total=None if int(args.max_parts_total) < 0 else int(args.max_parts_total),
-    )
+    with phase("data_load"):
+        data = load_problem_data(
+            args.dataset_dir,
+            max_service_miles_override=args.max_service_miles,
+            penalty_start_miles_override=args.penalty_start_miles,
+            top_hubs_per_zip=None if int(args.top_hubs_per_zip) < 0 else int(args.top_hubs_per_zip),
+            max_parts_total=None if int(args.max_parts_total) < 0 else int(args.max_parts_total),
+        )
 
     run_dir = Path(args.run_root).expanduser().resolve() / "va"
-    batches = build_batches(
-        data["active"],
-        data["part_order"],
-        data["zip_to_hubs"],
-        part_batch_size=int(args.part_batch_size),
-        max_z_vars_per_batch=int(args.max_z_vars_per_batch),
-    )
+    with phase("batch_build"):
+        batches = build_batches(
+            data["active"],
+            data["part_order"],
+            data["zip_to_hubs"],
+            part_batch_size=int(args.part_batch_size),
+            max_z_vars_per_batch=int(args.max_z_vars_per_batch),
+        )
 
     if not bool(args.dry_run):
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -2803,7 +3673,11 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     # Preflight: compile every batch model, learn the TRUE variable counts, check
     # the ceiling. Nothing is sampled and VectorAnnealing is not imported yet.
     print("\nPreflight: compiling every batch QUBO to measure true variable counts...", flush=True)
-    plan = build_batch_plan(data, batches, args)
+    # NOTE: this compiles every batch, and solve_va_batch() compiles each one
+    # AGAIN. The nested trace measures that duplication -- see the double-compile
+    # line in MemorySampler.print_report().
+    with phase("preflight"):
+        plan = build_batch_plan(data, batches, args)
     print_batch_plan(plan, args)
     check_ceiling(plan, args)
 
@@ -2814,6 +3688,9 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
             "VectorAnnealing was not imported. Exiting.",
             flush=True,
         )
+        stop_memory_sampler(sampler)
+        if sampler is not None:
+            sampler.print_report("HOST MEMORY BY PHASE (--dry-run: preflight only)")
         return None
 
     pd.DataFrame(plan).to_csv(run_dir / "va_batch_plan.csv", index=False)
@@ -2898,6 +3775,11 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
     )
 
     wall = time.perf_counter() - start
+    stop_memory_sampler(sampler)
+    memory_trace_path = None
+    if sampler is not None:
+        memory_trace_path = sampler.to_csv(run_dir / "va_memory_trace.csv")
+        sampler.print_report()
     peak_mb, current_mb = memory_report_mb()
     runtime = {
         "wall_seconds": float(wall),
@@ -2905,8 +3787,26 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
         "qubo_sample_seconds": float(sum(r.sample_seconds for r in results)),
         "sample_eval_seconds": float(sum(r.eval_seconds for r in results)),
         "batch_total_seconds": float(sum(r.total_seconds for r in results)),
+        # memory_accounting_version 2 == the post-fix semantics below. A
+        # summary.json WITHOUT this key predates the fix, and its
+        # peak_memory_mb is a tracemalloc figure (Python objects only), not RSS.
+        "memory_accounting_version": MEMORY_ACCOUNTING_VERSION,
+        # Whether this run's set/dict iteration order was pinned. Without it,
+        # annealer variation and hash-order variation are indistinguishable.
+        **reproducibility_snapshot(),
+        # peak_memory_mb is the MAXIMUM SINGLE-PROCESS HOST RSS HIGH-WATER MARK
+        # reached at any point in the pipeline -- the largest one process ever
+        # got. It is NOT a concurrent total and must never be summed or read as
+        # "how much memory the job needs at once". Size --mem against
+        # cgroup_peak_mb, which covers the whole job step. Host and device
+        # figures are separate resources and are never added.
+        #
+        # run_va_parallel_batches.py's merge path computes the same quantity, so
+        # this field means exactly the same thing in both code paths.
         "peak_memory_mb": float(peak_mb),
         "current_memory_mb": float(current_mb),
+        "memory_trace_path": ("" if memory_trace_path is None else str(memory_trace_path)),
+        "phase_peaks": (sampler.phase_summary() if sampler is not None else []),
         # Construction split: pyqubo expression building + compile is one-time
         # per batch, to_qubo re-feeds are per adaptive iteration.
         "pyqubo_express_seconds": float(sum(s["pyqubo_express_seconds"] for s in all_va_stats)),
@@ -2918,6 +3818,13 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
             float(sum(r.sample_seconds for r in results)) / float(wall) if wall > 0 else 0.0
         ),
         **memory_breakdown_mb(),
+        # Regression over PER-BATCH (total_vars, rss_peak_mb) pairs. It must not
+        # be fed `peak_mb`: that is the whole-pipeline high-water mark, covering
+        # the data load, the preflight over every batch, and the merge, none of
+        # which belong to any single batch's variable count.
+        "host_device_crossover": host_device_crossover_vars(
+            host_rss_points_from_stats(all_va_stats)
+        ),
     }
 
     precision_summary = print_precision_report(all_precision_rows)
@@ -3214,6 +4121,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     va.add_argument("--dry-run", action="store_true",
                     help="Load data, build batches, compile every QUBO, print the plan, check the "
                          "ceiling, exit. Does not import VectorAnnealing; runs on any machine.")
+
+    ve = p.add_argument_group("VE device memory")
+    ve.add_argument("--ve-hbm-gb", type=float, default=None,
+                    help="Card HBM capacity in GB, when the node exposes no readable "
+                         "capacity source. Recorded with hbm_capacity_source='user_supplied' "
+                         "so a supplied value is never mistaken for a measured one. No HBM "
+                         "size is hardcoded anywhere in this solver.")
+
+    mem = p.add_argument_group("host memory tracing")
+    mem.add_argument("--no-memory-trace", action="store_true",
+                     help="Disable the background RSS sampler and per-phase attribution. "
+                          "The sampler is ON by default: it is one sleeping thread polling "
+                          "/proc twice a second, negligible beside a multi-minute anneal.")
+    mem.add_argument("--memory-trace-interval", type=float, default=0.5,
+                     help="Seconds between RSS samples (default 0.5). Only affects the shape "
+                          "of the curve; per-phase attribution comes from VmHWM deltas, which "
+                          "are exact regardless of this value.")
+    mem.add_argument("--memory-trace-clear-refs", action="store_true",
+                     help="Reset VmHWM at every phase boundary via /proc/self/clear_refs, "
+                          "giving exact per-phase peaks instead of deltas. Gated on a startup "
+                          "self-test: it is refused unless clear_refs resets VmHWM WITHOUT "
+                          "also resetting getrusage ru_maxrss, which would corrupt peak RSS.")
 
     args = p.parse_args(argv)
 

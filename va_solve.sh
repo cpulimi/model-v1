@@ -108,6 +108,13 @@ set -u
 # Prove the active python can actually run the solver BEFORE queueing any work.
 # Written in 3.6-compatible syntax (no f-strings) so the check reports the
 # problem instead of dying of it.
+# Pin hash-order determinism before the interpreter starts. Python randomises
+# str hashing per process, so set/dict iteration order -- and therefore any
+# float sum taken off a set -- varies between runs. See sbatch_scripts/va_env.sh
+# for the full rationale. Override with PYTHONHASHSEED=random to run a control
+# arm that deliberately measures hash sensitivity.
+export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
+
 echo ">>> interpreter check: $(command -v python || echo '<no python on PATH>')"
 set +e
 python - <<'PYCHECK'

@@ -812,6 +812,13 @@ def run_gurobi_solver(args: argparse.Namespace) -> dict[str, Any]:
     runtime = {
         "wall_seconds": float(wall),
         "solver_runtime_seconds": float(model.Runtime),
+        # NOTE: this peak_memory_mb is the OLD blended max(tracemalloc_peak,
+        # rss_peak, current) and is NOT comparable to the VA path's field of the
+        # same name. run_va_fsl_solver.py / run_va_parallel_batches.py now report
+        # a pure host RSS high-water mark and stamp memory_accounting_version=2;
+        # this OpenJij comparison runner was deliberately left on the old
+        # semantics. Do not put the two side by side in one table without saying
+        # which is which.
         "peak_memory_mb": float(peak_mb),
         "current_memory_mb": float(current_mb),
     }

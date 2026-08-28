@@ -75,6 +75,13 @@ echo ">>> depend    ${VA_SOLVE_DEPEND:-<none>}"
 # No card needed, so this does not queue. It also fails fast: if a batch is over
 # the VA ceiling, check_ceiling aborts here rather than after a queue wait.
 VA_REQUIRE_CARD=0
+# Pin hash-order determinism before the interpreter starts. Python randomises
+# str hashing per process, so set/dict iteration order -- and therefore any
+# float sum taken off a set -- varies between runs. See sbatch_scripts/va_env.sh
+# for the full rationale. Override with PYTHONHASHSEED=random to run a control
+# arm that deliberately measures hash sensitivity.
+export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
+
 source "$PROJECT/sbatch_scripts/va_env.sh"
 
 echo ""

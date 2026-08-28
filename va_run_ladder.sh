@@ -78,6 +78,13 @@ if [[ "${VE_COUNT:-0}" -eq 0 && -z "${VA_ALLOW_NO_CARD:-}" ]]; then
 fi
 
 echo ">>> host      $(hostname)"
+# Pin hash-order determinism before the interpreter starts. Python randomises
+# str hashing per process, so set/dict iteration order -- and therefore any
+# float sum taken off a set -- varies between runs. See sbatch_scripts/va_env.sh
+# for the full rationale. Override with PYTHONHASHSEED=random to run a control
+# arm that deliberately measures hash sensitivity.
+export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
+
 echo ">>> python    $(command -v python3) -- $(python3 -V 2>&1)"
 echo ">>> VE nodes  $(ls -1 /dev/veslot* /dev/ve[0-9]* 2>/dev/null | tr '\n' ' ' || echo none)"
 echo ">>> run root  $VA_RUN_ROOT"

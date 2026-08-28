@@ -201,7 +201,7 @@ def do_split(args: argparse.Namespace, work_dir: Path, run_root: Path) -> int:
 # ---------------------------------------------------------------------------
 
 
-def do_solve(args: argparse.Namespace, batch_id: int, work_dir: Path) -> int:
+def do_solve(args: argparse.Namespace, batch_id: int, work_dir: Path, va_dir: Path) -> int:
     if batch_id is None or int(batch_id) < 1:
         raise SystemExit("--mode solve requires --batch-id N (N >= 1)")
 
@@ -233,6 +233,7 @@ def do_solve(args: argparse.Namespace, batch_id: int, work_dir: Path) -> int:
     VectorAnnealing = solver.import_vector_annealing()
 
     tracemalloc.start()
+    sampler = solver.start_memory_sampler(args, batch_id=int(batch_id))
     t0 = time.perf_counter()
     result, precision_rows, va_stats = solver.solve_va_batch(
         VectorAnnealing, batch, data, args, beta_range
@@ -240,6 +241,14 @@ def do_solve(args: argparse.Namespace, batch_id: int, work_dir: Path) -> int:
     solve_seconds = time.perf_counter() - t0
     _, peak_b = tracemalloc.get_traced_memory()
     tracemalloc.stop()
+    solver.stop_memory_sampler(sampler)
+
+    # Trace goes beside the precision audit in the run's va/ directory.
+    trace_path = None
+    if sampler is not None:
+        va_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = sampler.to_csv(va_dir / f"va_memory_trace_batch_{int(batch_id):04d}.csv")
+        sampler.print_report(f"HOST MEMORY BY PHASE - batch {batch_id}")
 
     payload = {
         "batch_id": int(batch_id),
@@ -248,8 +257,24 @@ def do_solve(args: argparse.Namespace, batch_id: int, work_dir: Path) -> int:
         "precision_rows": precision_rows,
         "va_stats": va_stats,
         "solve_seconds": float(solve_seconds),
+        "memory_accounting_version": solver.MEMORY_ACCOUNTING_VERSION,
+        # Was this solve's set/dict iteration order pinned? Merge cross-checks it.
+        "reproducibility": solver.reproducibility_snapshot(),
+        # Python objects ONLY -- blind to pandas, the pyqubo compiled model, and
+        # everything the VectorAnnealing extension allocates. Kept for continuity
+        # with profiling_regression_record.md; never the headline figure.
         "python_peak_tracemalloc_mb": float(peak_b) / (1024.0 * 1024.0),
+        # The honest host figure: this process's RSS high-water mark.
         "rss_peak_mb": float(solver.peak_rss_mb()),
+        # Every host memory scope, separately named. rss_peak_children_mb is
+        # expected to read 0.0: nothing here forks (see peak_rss_children_mb).
+        "memory": solver.memory_snapshot(),
+        "phase_peaks": (sampler.phase_summary() if sampler is not None else []),
+        "memory_trace_path": ("" if trace_path is None else str(trace_path)),
+        "ve_device": solver.ve_device_report(
+            predicted_dense_bytes=int((va_stats or {}).get("dense_matrix_bytes") or 0),
+            hbm_gb_override=getattr(args, "ve_hbm_gb", None),
+        ),
         "build_seconds": float(result.build_seconds),
         "sample_seconds": float(result.sample_seconds),
         "eval_seconds": float(result.eval_seconds),
@@ -295,16 +320,18 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
 
     merge_start = time.perf_counter()
     tracemalloc.start()
+    sampler = solver.start_memory_sampler(args)
 
     payloads: list[dict[str, Any]] = []
     missing: list[int] = []
-    for bid in expected_ids:
-        pkl = work_dir / f"batch_{int(bid):04d}.pkl"
-        if not pkl.is_file():
-            missing.append(int(bid))
-            continue
-        with open(pkl, "rb") as fh:
-            payloads.append(pickle.load(fh))
+    with solver.phase("merge.load"):
+        for bid in expected_ids:
+            pkl = work_dir / f"batch_{int(bid):04d}.pkl"
+            if not pkl.is_file():
+                missing.append(int(bid))
+                continue
+            with open(pkl, "rb") as fh:
+                payloads.append(pickle.load(fh))
 
     if missing:
         raise SystemExit(
@@ -327,19 +354,22 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
     va_dir.mkdir(parents=True, exist_ok=True)
 
     # Identical aggregate + post-process to run_va_solver.
-    raw = solver.aggregate_raw_results(results)
+    with solver.phase("merge.aggregate"):
+        raw = solver.aggregate_raw_results(results)
     t_post = time.perf_counter()
-    final = solver.postprocess_qubo_solution(
-        raw["assignments"],
-        raw["stocked_pairs"],
-        raw["open_hubs"],
-        data,
-        repair_assignments=not bool(args.no_repair_assignments),
-        trim_unused=not bool(args.no_trim_unused),
-        hub_prune=not bool(args.no_hub_prune),
-        hub_prune_max_iterations=int(args.hub_prune_max_iterations),
-    )
+    with solver.phase("merge.postprocess"):
+        final = solver.postprocess_qubo_solution(
+            raw["assignments"],
+            raw["stocked_pairs"],
+            raw["open_hubs"],
+            data,
+            repair_assignments=not bool(args.no_repair_assignments),
+            trim_unused=not bool(args.no_trim_unused),
+            hub_prune=not bool(args.no_hub_prune),
+            hub_prune_max_iterations=int(args.hub_prune_max_iterations),
+        )
     postprocess_seconds = time.perf_counter() - t_post
+    solver.active_sampler() and solver.active_sampler().push("merge.write_outputs")
 
     # Same filenames the sequential runner writes.
     solver.batch_summary_dataframe(results).to_csv(va_dir / "batch_summary.csv", index=False)
@@ -366,9 +396,16 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
         va_dir / "raw_qubo_stocked_pairs.csv", index=False
     )
 
+    if solver.active_sampler() is not None:
+        solver.active_sampler().pop()          # closes merge.write_outputs
+
     merge_seconds = time.perf_counter() - merge_start
     _, peak_m = tracemalloc.get_traced_memory()
     tracemalloc.stop()
+    solver.stop_memory_sampler(sampler)
+    merge_trace_path = None
+    if sampler is not None:
+        merge_trace_path = sampler.to_csv(va_dir / "va_memory_trace_merge.csv")
 
     raw_cost = solver.compute_solution_cost(
         raw["assignments"], raw["stocked_pairs"], raw["open_hubs"], data
@@ -390,10 +427,74 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
         "batch_total_seconds": float(sum(r.total_seconds for r in results)),
         "merge_seconds": float(merge_seconds),
         "postprocess_seconds": float(postprocess_seconds),
-        "peak_memory_mb": float(max(float(p["python_peak_tracemalloc_mb"]) for p in payloads)),
-        "current_memory_mb": float(peak_m) / (1024.0 * 1024.0),
+
+        # ------------------------------------------------------------------
+        # HOST MEMORY. Device memory lives in extra["va"]["ve_device"] and the
+        # two are NEVER summed -- they are separate physical resources.
+        #
+        # memory_accounting_version 2 == the semantics below. A summary.json
+        # WITHOUT this key predates the fix, and its peak_memory_mb is a
+        # tracemalloc figure (Python objects only), understating true host
+        # memory by however much of the footprint was pandas/pyqubo/extension.
+        # ------------------------------------------------------------------
+        "memory_accounting_version": solver.MEMORY_ACCOUNTING_VERSION,
+        # Hash-order pinning for the MERGE process. Each solve records its own;
+        # a repeat study needs every process pinned, so the seeds the batches
+        # actually ran under are carried here too rather than assumed to match.
+        **solver.reproducibility_snapshot(),
+        "batch_python_hash_seeds": sorted({
+            str((p.get("reproducibility") or {}).get("python_hash_seed", "<unrecorded>"))
+            for p in payloads
+        }),
+
+        # peak_memory_mb is the MAXIMUM SINGLE-PROCESS HOST RSS HIGH-WATER MARK
+        # reached at any point in the pipeline -- the largest one process ever
+        # got. It is NOT a concurrent total and must never be summed or read as
+        # "how much memory the job needs at once": the batches ran as separate
+        # SLURM array tasks, serialised on one card, so they were never all
+        # resident together. Size --mem against cgroup_peak_mb, which covers the
+        # whole job step.
+        #
+        # run_va_fsl_solver.py's single-process runtime dict computes the same
+        # quantity from memory_report_mb(), so this field means exactly the same
+        # thing in both code paths.
+        #
+        # It used to be max(per-batch tracemalloc peak), which is a different
+        # quantity entirely: on va_20hubs it read 114.5 MB against a true RSS
+        # peak of 480.7 MB.
+        "peak_memory_mb": float(max(
+            max(float(p["rss_peak_mb"]) for p in payloads),
+            float(solver.peak_rss_mb()),
+        )),
+        # An actual CURRENT reading, from the merge process. Previously this
+        # held the merge process's tracemalloc PEAK -- mislabelled twice over.
+        "current_memory_mb": float(solver.current_rss_mb()),
+
         "merge_rss_peak_mb": float(solver.peak_rss_mb()),
         "max_batch_rss_peak_mb": float(max(float(p["rss_peak_mb"]) for p in payloads)),
+
+        # tracemalloc retained, under names that say what it is: Python-object
+        # allocations only.
+        "merge_python_peak_tracemalloc_mb": float(peak_m) / (1024.0 * 1024.0),
+        "max_batch_python_peak_tracemalloc_mb": float(
+            max(float(p["python_peak_tracemalloc_mb"]) for p in payloads)
+        ),
+
+        # Whole-job-step scope: the only figure --mem can be sized against.
+        # 0.0 off-cgroup. Batch payloads written before this change carry no
+        # "memory" key, hence the .get() chain.
+        "max_batch_cgroup_peak_mb": float(max(
+            (float((p.get("memory") or {}).get("cgroup_peak_mb", 0.0)) for p in payloads),
+            default=0.0,
+        )),
+        "merge_cgroup_peak_mb": float(solver.cgroup_peak_mb()),
+        # Peak RSS of the largest finished CHILD, not a sum. Expected to be 0.0:
+        # nothing in this pipeline forks. Non-zero means that changed.
+        "max_batch_rss_children_peak_mb": float(max(
+            (float((p.get("memory") or {}).get("rss_peak_children_mb", 0.0)) for p in payloads),
+            default=0.0,
+        )),
+        "merge_rss_children_peak_mb": float(solver.peak_rss_children_mb()),
         "pyqubo_express_seconds": float(sum(s["pyqubo_express_seconds"] for s in all_va_stats)),
         "pyqubo_compile_seconds": float(sum(s["pyqubo_compile_seconds"] for s in all_va_stats)),
         "annealing_seconds": float(sum(r.sample_seconds for r in results)),
@@ -401,7 +502,44 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
             float(sum(r.sample_seconds for r in results)) / (solve_total + merge_seconds)
             if (solve_total + merge_seconds) > 0 else 0.0
         ),
+        # Which resource binds the batch ceiling is a REGIME, not a constant:
+        # device cost is quadratic in vars, host cost is roughly linear in
+        # interactions because the host never densifies. Recomputed per run from
+        # this run's own measurement rather than frozen from an old fit.
+        # Regression over PER-BATCH pairs, both halves from the SAME batch.
+        # Previously this paired max(rss_peak) over payloads with max(total_vars)
+        # over va_stats -- independent maxima that can come from different
+        # batches, describing a batch that never existed.
+        "host_device_crossover": solver.host_device_crossover_vars(
+            solver.host_rss_points_from_stats([
+                {**(s or {}), "rss_peak_mb": float(pay.get("rss_peak_mb") or 0.0)}
+                for pay, s in zip(payloads, [p.get("va_stats") for p in payloads])
+            ])
+        ),
+        "phase_peaks_by_batch": {
+            str(p["batch_id"]): (p.get("phase_peaks") or []) for p in payloads
+        },
+        "merge_phase_peaks": (sampler.phase_summary() if sampler is not None else []),
+        "merge_memory_trace_path": ("" if merge_trace_path is None else str(merge_trace_path)),
     }
+
+    # Device memory report. Prefer whatever the solve jobs recorded (only they
+    # touched the card); fall back to a locally-computed prediction so the block
+    # is populated even for batch payloads written before this field existed.
+    # The prediction is always present; an OBSERVED number appears only if some
+    # source on the node actually produced one.
+    merged_ve_device = max(
+        (p.get("ve_device") or {} for p in payloads),
+        key=lambda d: int(d.get("predicted_dense_bytes") or 0),
+        default={},
+    )
+    if not merged_ve_device:
+        merged_ve_device = solver.ve_device_report(
+            predicted_dense_bytes=int(max(
+                (s["dense_matrix_bytes"] for s in all_va_stats), default=0
+            )),
+            hbm_gb_override=getattr(args, "ve_hbm_gb", None),
+        )
 
     prov = payloads[0].get("va_provenance", {})
     extra = {
@@ -430,6 +568,10 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
             "manual_reference": solver.VA_MANUAL_REF,
             # Recorded by the solve jobs; merge itself never touches the card.
             **prov,
+            # Device memory, kept strictly apart from every host figure above.
+            # Carries the analytical prediction always, and an observed number
+            # only if this install has any source for one.
+            "ve_device": merged_ve_device,
             "objective_scale_enabled": bool(args.enable_objective_scale),
             "min_penalty": float(args.min_penalty),
             "seeded": bool(args.va_seed is not None),
@@ -473,8 +615,11 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
             "annealing_seconds": float(runtime["annealing_seconds"]),
             "evaluation_seconds": float(runtime["sample_eval_seconds"]),
             "total_wall_seconds": float(runtime["wall_seconds"]),
+            # Host RSS high-water mark, max over batch and merge processes.
+            # NOT a concurrent total -- see the runtime dict above.
             "peak_memory_mb": float(runtime["peak_memory_mb"]),
             "rss_peak_mb": float(runtime["max_batch_rss_peak_mb"]),
+            "cgroup_peak_mb": float(runtime["max_batch_cgroup_peak_mb"]),
             "raw_cost": float(raw_cost["total_cost"]),
             "raw_structural_violations": int(raw_audit["total_structural_violations"]),
             "raw_c1_violations": int(raw_audit["c1_assignment_violations"]),
@@ -511,6 +656,8 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
         f"+ merge {merge_seconds:,.1f}s (postprocess {postprocess_seconds:,.1f}s)",
         flush=True,
     )
+    if sampler is not None:
+        sampler.print_report("HOST MEMORY BY PHASE - merge")
     print(f"  outputs -> {va_dir}", flush=True)
     return 0
 
@@ -570,7 +717,7 @@ def main(argv: list[str] | None = None) -> int:
     if mine.mode == "split":
         return do_split(args, work_dir, run_root)
     if mine.mode == "solve":
-        return do_solve(args, mine.batch_id, work_dir)
+        return do_solve(args, mine.batch_id, work_dir, va_dir)
     return do_merge(args, work_dir, va_dir)
 
 
