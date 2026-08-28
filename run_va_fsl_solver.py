@@ -2276,11 +2276,14 @@ def ve_device_report(
     report: dict[str, Any] = {
         "hbm_capacity_bytes": None,
         "hbm_capacity_source": "unknown",
-        "observed_peak_device_bytes": None,
+        "observed_peak_device_bytes": None,           # bytes; ONLY when unit is known
+        "observed_device_memory_raw": None,            # unit-agnostic raw value
+        "observed_device_memory_source": "",
+        "observed_device_memory_mb_if_mb": None,       # best guess -- see note
         "device_peak_source": "none_available",
-        "device_peak_is_measured": False,
+        "device_peak_is_measured": False,              # False until unit confirmed
         "predicted_dense_bytes": int(predicted_dense_bytes),
-        "observed_minus_predicted_bytes": None,
+        "observed_minus_predicted_bytes": None,        # requires unit-confirmed observation
         "ve_devices_visible": [],
         "ve_card_count": 0,
         "note": "",
@@ -2304,10 +2307,19 @@ def ve_device_report(
 
     # --- observed peak ----------------------------------------------------
     # 1) whatever the VA result/stats objects carry.
+    #
+    # UNIT AMBIGUITY. The V3.0.0 install exposes result.memory_usage, and the
+    # probe showed it returned 1.19140625 for a 2-variable smoke test. That is
+    # not documented anywhere reachable, so the UNIT is unknown -- bytes is
+    # ruled out (impossibly small) but MB, MiB and KiB are all plausible. The
+    # value is therefore recorded as-is under `observed_device_memory_raw`,
+    # with the source string, and observed_peak_device_bytes is only populated
+    # if we ever add a source whose unit is known. observed_minus_predicted is
+    # not computed on a raw whose unit is not confirmed.
     if va_results:
         try:
             items = va_results if isinstance(va_results, (list, tuple)) else [va_results]
-            best = None
+            best_raw = None
             attr_used = ""
             for item in items:
                 for attr in VE_RESULT_MEMORY_ATTRS:
@@ -2315,15 +2327,28 @@ def ve_device_report(
                     if raw is None or callable(raw):
                         continue
                     try:
-                        num = int(float(raw))
+                        val = float(raw)
                     except Exception:
                         continue
-                    if num > 0 and (best is None or num > best):
-                        best, attr_used = num, attr
-            if best is not None:
-                report["observed_peak_device_bytes"] = int(best)
-                report["device_peak_source"] = f"VectorAnnealing result.{attr_used}"
-                report["device_peak_is_measured"] = True
+                    if val > 0 and (best_raw is None or val > best_raw):
+                        best_raw, attr_used = val, attr
+            if best_raw is not None:
+                report["observed_device_memory_raw"] = float(best_raw)
+                report["observed_device_memory_source"] = (
+                    f"VectorAnnealing result.{attr_used}"
+                )
+                # Best-guess interpretation surfaced under a name that says it
+                # is a guess. NEVER used for the observed-minus-predicted delta.
+                report["observed_device_memory_mb_if_mb"] = float(best_raw)
+                report["device_peak_is_measured"] = False
+                report["device_peak_source"] = (
+                    f"VectorAnnealing result.{attr_used} (UNIT UNKNOWN)"
+                )
+                report["note"] = (
+                    f"result.{attr_used}={best_raw!r} recorded raw. Unit is not "
+                    f"documented; observed_peak_device_bytes NOT populated. "
+                    f"Once the unit is confirmed, promote from raw to bytes."
+                )
         except Exception:
             pass
 
@@ -2339,7 +2364,10 @@ def ve_device_report(
         report["observed_minus_predicted_bytes"] = (
             int(report["observed_peak_device_bytes"]) - int(predicted_dense_bytes)
         )
-    else:
+    elif not report["note"]:
+        # Nothing set the note yet -- no source at all was found. Say so
+        # plainly. If a raw was found but its unit is unknown, the raw-source
+        # branch already wrote a more specific note; do not clobber it.
         report["note"] = (
             "No runtime device readout available on this install: device memory is "
             "PREDICTED (dense_matrix_bytes), never measured. Capacity and prediction "
