@@ -1,0 +1,4 @@
+instance,hubs,total_vars,host_rss_peak_mb,cgroup_peak_mb,device_dense_mb,batch_count,wall_seconds,host_rss_source,cgroup_source,status
+instances_10hubs,10,4397,253.63671875,,73.75186538696289,1,621.1171536408365,summary.json (measured),"pre-fix headerless TSV, memory columns blank",complete
+instances_20hubs,20,8659,480.70703125,,286.0194435119629,1,1604.9780996991321,summary.json (measured),"pre-fix headerless TSV, memory columns blank",complete
+instances_50hubs,50,23652,,,2134.0068969726562,1,,not measured,no slurm_mem_va.tsv,INCOMPLETE - solve did not finish
