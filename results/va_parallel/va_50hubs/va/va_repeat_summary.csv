@@ -1,0 +1,2 @@
+batch_id,total_vars,iteration,repeat,attempts_used,reads,energy_min,energy_median,energy_max,cost_min,cost_median,cost_max,constraint_satisfied_reads,structurally_feasible_reads,best_total_violations,best_cost
+1,23652,1,1,1,187,-728507651.4755,-728499030.6565,-728494856.825,27792348.5245,27800969.343500003,27805143.175,187,187,0,27792348.5245
