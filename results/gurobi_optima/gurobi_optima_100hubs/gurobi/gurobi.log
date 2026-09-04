@@ -1,0 +1,54 @@
+
+Gurobi 13.0.2 (linux64) logging started Fri Sep  4 07:59:28 2026
+
+Set parameter LogFile to value "/home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_100hubs/gurobi/gurobi.log"
+Set parameter MIPGap to value 0
+Set parameter TimeLimit to value 54000
+Set parameter Threads to value 16
+Set parameter Seed to value 42
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Rocky Linux 8.10 (Green Obsidian)")
+
+CPU model: AMD EPYC 9534 64-Core Processor, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 128 physical cores, 128 logical processors, using up to 16 threads
+
+Non-default parameters:
+TimeLimit  54000
+MIPGap  0
+Seed  42
+Threads  16
+
+Optimize a model with 75707 rows, 47415 columns and 166275 nonzeros (Min)
+Model fingerprint: 0x517b3c81
+Model has 47415 linear objective coefficients
+Variable types: 100 continuous, 47315 integer (47315 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 2e+02]
+  Objective range  [6e-01, 5e+05]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+00, 5e+04]
+
+Found heuristic solution: objective 5.536859e+07
+Presolve removed 71976 rows and 44427 columns
+Presolve time: 0.03s
+Presolved: 3731 rows, 2988 columns, 9017 nonzeros
+Found heuristic solution: objective 5.507393e+07
+Variable types: 0 continuous, 2988 integer (2988 binary)
+Performing another presolve...
+Presolve removed 4282 rows and 2979 columns
+Presolve time: 0.07s
+Found heuristic solution: objective 5.396440e+07
+
+Root relaxation: objective 5.348236e+07, 3 iterations, 0.00 seconds (0.00 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+*    0     0               0    5.348236e+07 5.3482e+07  0.00%     -    0s
+
+Explored 1 nodes (3 simplex iterations) in 0.15 seconds (0.11 work units)
+Thread count was 16 (of 128 available processors)
+
+Solution count 4: 5.34824e+07 5.39644e+07 5.50739e+07 5.53686e+07 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 5.348236304700e+07, best bound 5.348236304700e+07, gap 0.0000%

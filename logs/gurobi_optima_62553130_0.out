@@ -1,0 +1,137 @@
+============================================================================
+GUROBI OPTIMA - RESOLVED MAPPING
+============================================================================
+  host:                 scc036
+  project:              /home/cpulimi/ModelV1/model-v1
+  python:               /home/cpulimi/.conda/envs/qubo/bin/python
+  array job / task:     62553130 / 0
+  slurm job id:         62553140
+  ---- mapping ----
+  size:                 10 hubs
+  dataset dir:          instances_10hubs
+  run name:             gurobi_optima_10hubs
+  output dir:           results/gurobi_optima
+  ideal cores (case):   4
+  granted cores:        16   [from SLURM_CPUS_PER_TASK]
+  gurobi --threads:     16
+  ideal mem (case):     16G
+  slurm mem/node:       65536 MB
+  ideal walltime:       0-02:00:00
+  gurobi time limit:    6000s  (must be < walltime so the
+                        process exits cleanly and writes ObjBound)
+  mip gap requested:    0  (prove optimality, do not stop at 0.1%)
+  PYTHONHASHSEED:       0
+  final summary:        results/gurobi_optima/gurobi_optima_10hubs/gurobi/summary.json
+============================================================================
+
+============================================================================================
+ALIGNED FSL RUNNER
+============================================================================================
+  dataset dir:      /home/cpulimi/ModelV1/model-v1/instances_10hubs
+  solvers:          gurobi
+  run folder:       /home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_10hubs
+  config file:      /home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_10hubs/run_config.json
+============================================================================================
+
+############################################################################################
+Launching GUROBI child process
+############################################################################################
+
+============================================================================
+GUROBI MODEL - ALIGNED COST BASIS
+============================================================================
+  dataset:                  instances_10hubs
+  active demand pairs:      3,207
+  candidate Z variables:    3,207
+  stocked Y variables:      1,180
+  hub X variables:          10
+  base miles:               20.0
+  penalty start miles:      130.0
+  max service miles:        180.0
+  output folder:            /home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_10hubs/gurobi
+============================================================================
+Set parameter LicenseID to value 2848594
+Set parameter GURO_PAR_SPECIAL
+Set parameter TokenServer to value "gurobi01.sol.rc.asu.edu"
+Set parameter LogToConsole to value 1
+Set parameter LogFile to value "/home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_10hubs/gurobi/gurobi.log"
+Set parameter MIPGap to value 0
+Set parameter TimeLimit to value 6000
+Set parameter Threads to value 16
+Set parameter Seed to value 42
+Creating variables...
+Building objective...
+Adding assignment constraints...
+Adding stock/open constraints...
+Adding activation and overflow constraints...
+Starting Gurobi optimize: vars=4,407, constraints=7,624, mip_gap=0
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Rocky Linux 8.10 (Green Obsidian)")
+
+CPU model: AMD EPYC 9534 64-Core Processor, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 128 physical cores, 128 logical processors, using up to 16 threads
+
+Non-default parameters:
+TimeLimit  6000
+MIPGap  0
+Seed  42
+Threads  16
+
+Optimize a model with 7624 rows, 4407 columns and 15551 nonzeros (Min)
+Model fingerprint: 0x309f54fe
+Model has 4407 linear objective coefficients
+Variable types: 10 continuous, 4397 integer (4397 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+02]
+  Objective range  [6e-01, 5e+05]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+00, 5e+04]
+
+Found heuristic solution: objective 5498943.1785
+Presolve removed 7624 rows and 4407 columns
+Presolve time: 0.18s
+Presolve: All rows and columns removed
+
+Explored 0 nodes (0 simplex iterations) in 0.30 seconds (0.00 work units)
+Thread count was 1 (of 128 available processors)
+
+Solution count 1: 5.49894e+06 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 5.498943178500e+06, best bound 5.498943178500e+06, gap 0.0000%
+============================================================================
+GUROBI FINAL RESULTS
+============================================================================
+  total cost:                 $5,498,943.18
+  inventory cost:             $194,158.12
+  fixed open-hub cost:        $5,000,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $18,100.00
+  assignment transport cost:  $286,685.06
+  open hubs:                  10
+  closed hubs:                0
+  stocked hub-part pairs:     1,180
+  hub-zip-part pairings:      3,207
+  structural violations:      0
+  SLA distance violations:    638
+  wall time:                  4.01s
+  peak/current memory:        109.1/108.7 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_10hubs/gurobi
+============================================================================
+
+============================================================================================
+COMBINED FINAL COMPARISON
+============================================================================================
+Run folder: /home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_10hubs
+
+Solver      Total Cost        Open  Closed  Stocked Pairs  Assignments  Struct Viol  SLA Viol  Wall(s)  Peak MB
+----------  ----------------  -----  ------  -------------  -----------  -----------  --------  -------  -------
+gurobi         $5,498,943.18     10       0          1,180        3,207            0       638     4.01    109.1
+
+Files written:
+  combined_summary.csv
+  combined_summary.json
+  combined_summary.txt
+  gurobi/summary.txt and qubo/summary.txt when those solvers were run
+============================================================================================
+>>> python exit code: 0
+>>> slurm mem: job=62553130_0 size=10 MaxRSS= MaxVMSize= ReqMem= Elapsed=

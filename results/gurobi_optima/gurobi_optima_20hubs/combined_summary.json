@@ -1,0 +1,23 @@
+{
+  "run_root": "/home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_20hubs",
+  "solvers": [
+    "gurobi"
+  ],
+  "rows": [
+    {
+      "solver": "gurobi",
+      "total_cost": 10974909.435,
+      "open_hubs": 20,
+      "closed_hubs": 0,
+      "stocked_hub_part_pairs": 2330,
+      "hub_zip_part_pairings": 5996,
+      "structural_violations": 0,
+      "sla_distance_violations": 894,
+      "max_service_distance_violations": 0,
+      "wall_seconds": 5.5668792854994535,
+      "peak_memory_mb": 126.69921875,
+      "current_memory_mb": 125.953125,
+      "output_dir": "/home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_20hubs/gurobi"
+    }
+  ]
+}

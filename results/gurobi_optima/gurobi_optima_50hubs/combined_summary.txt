@@ -1,0 +1,15 @@
+============================================================================================
+COMBINED FINAL COMPARISON
+============================================================================================
+Run folder: /home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_50hubs
+
+Solver      Total Cost        Open  Closed  Stocked Pairs  Assignments  Struct Viol  SLA Viol  Wall(s)  Peak MB
+----------  ----------------  -----  ------  -------------  -----------  -----------  --------  -------  -------
+gurobi        $27,651,284.44     50       0          5,791       15,126            0     2,105    12.11    186.4
+
+Files written:
+  combined_summary.csv
+  combined_summary.json
+  combined_summary.txt
+  gurobi/summary.txt and qubo/summary.txt when those solvers were run
+============================================================================================

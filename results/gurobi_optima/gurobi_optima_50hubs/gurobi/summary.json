@@ -1,0 +1,74 @@
+{
+  "solver": "gurobi",
+  "dataset": {
+    "dataset_name": "instances_50hubs",
+    "dataset_dir": "/home/cpulimi/ModelV1/model-v1/instances_50hubs",
+    "hubs": 50,
+    "parts": 150,
+    "zips": 1000,
+    "active_demand_pairs": 15126,
+    "max_service_miles": 180.0,
+    "base_miles": 20.0,
+    "penalty_start_miles": 130.0,
+    "top_hubs_per_zip": null,
+    "max_parts_total": null
+  },
+  "final_solution": {
+    "open_hubs_count": 50,
+    "closed_hubs_count": 0,
+    "stocked_pairs_count": 5791,
+    "assignments_count": 15126,
+    "cost": {
+      "total_cost": 27651284.444499996,
+      "inventory_cost": 1208695.5399999977,
+      "fixed_open_hub_cost": 25000000.0,
+      "overflow_storage_cost": 0.0,
+      "new_hub_transfer_cost": 85300.0,
+      "assignment_transport_cost": 1357288.904499997,
+      "overflow_units": 0.0
+    },
+    "audit": {
+      "c1_assignment_violations": 0,
+      "c1_missing_assignments": 0,
+      "c1_multiple_assignments": 0,
+      "c1_invalid_hub_assignments": 0,
+      "c1_extra_assignments": 0,
+      "c2_assignment_without_stock": 0,
+      "c3_stock_without_open_hub": 0,
+      "c4_hubs_over_L": 0,
+      "c4_total_overflow_units": 0,
+      "max_service_distance_violations": 0,
+      "sla_distance_violations": 2105,
+      "total_structural_violations": 0
+    }
+  },
+  "runtime": {
+    "wall_seconds": 12.11196550540626,
+    "solver_runtime_seconds": 0.18370914459228516,
+    "peak_memory_mb": 186.40234375,
+    "peak_memory_source": "proc_self_status_vmhwm",
+    "memory_accounting_version": 2,
+    "python_alloc_peak_mb": 27.585186004638672,
+    "legacy_blended_peak_mb": 186.40234375,
+    "current_memory_mb": 186.40234375
+  },
+  "output_dir": "/home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_50hubs/gurobi",
+  "extra": {
+    "gurobi_result_version": 2,
+    "gurobi_status": "OPTIMAL",
+    "gurobi_status_code": 2,
+    "gurobi_objective": 27651284.444500003,
+    "mip_gap": 0.0,
+    "num_variables": 23702,
+    "num_constraints": 38878,
+    "has_incumbent_solution": true,
+    "obj_bound": 27651284.444500003,
+    "obj_bound_c": 27651284.444500003,
+    "mip_gap_achieved": 0.0,
+    "node_count": 1.0,
+    "gurobi_runtime": 0.18370914459228516,
+    "threads_resolved": 16,
+    "mip_gap_requested": 0.0,
+    "seed_used": 42
+  }
+}

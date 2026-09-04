@@ -1,0 +1,51 @@
+
+Gurobi 13.0.2 (linux64) logging started Fri Sep  4 07:59:28 2026
+
+Set parameter LogFile to value "/home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_50hubs/gurobi/gurobi.log"
+Set parameter MIPGap to value 0
+Set parameter TimeLimit to value 26400
+Set parameter Threads to value 16
+Set parameter Seed to value 42
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Rocky Linux 8.10 (Green Obsidian)")
+
+CPU model: AMD EPYC 9534 64-Core Processor, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 128 physical cores, 128 logical processors, using up to 16 threads
+
+Non-default parameters:
+TimeLimit  26400
+MIPGap  0
+Seed  42
+Threads  16
+
+Optimize a model with 38878 rows, 23702 columns and 83262 nonzeros (Min)
+Model fingerprint: 0xdc179cfd
+Model has 23702 linear objective coefficients
+Variable types: 50 continuous, 23652 integer (23652 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 2e+02]
+  Objective range  [6e-01, 5e+05]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+00, 5e+04]
+
+Found heuristic solution: objective 2.782042e+07
+Presolve removed 38868 rows and 23694 columns
+Presolve time: 0.17s
+Presolved: 10 rows, 8 columns, 20 nonzeros
+Found heuristic solution: objective 2.765188e+07
+Variable types: 0 continuous, 8 integer (8 binary)
+Found heuristic solution: objective 2.765178e+07
+
+Root relaxation: objective 2.765128e+07, 1 iterations, 0.00 seconds (0.00 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+*    0     0               0    2.765128e+07 2.7651e+07  0.00%     -    0s
+
+Explored 1 nodes (1 simplex iterations) in 0.18 seconds (0.05 work units)
+Thread count was 16 (of 128 available processors)
+
+Solution count 4: 2.76513e+07 2.76518e+07 2.76519e+07 2.78204e+07 
+
+Optimal solution found (tolerance 0.00e+00)
+Best objective 2.765128444450e+07, best bound 2.765128444450e+07, gap 0.0000%

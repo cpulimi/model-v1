@@ -1,0 +1,2 @@
+solver,total_cost,open_hubs,closed_hubs,stocked_hub_part_pairs,hub_zip_part_pairings,structural_violations,sla_distance_violations,max_service_distance_violations,wall_seconds,peak_memory_mb,current_memory_mb,output_dir
+gurobi,5498943.178499999,10,0,1180,3207,0,638,0,4.009283887222409,109.09765625,108.65234375,/home/cpulimi/ModelV1/model-v1/results/gurobi_optima/gurobi_optima_10hubs/gurobi
