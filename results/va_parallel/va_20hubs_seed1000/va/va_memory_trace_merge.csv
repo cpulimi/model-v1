@@ -1,0 +1,11 @@
+t_seconds,phase,depth,rss_mb,batch_id
+0.0006,merge.load,1,100.832,
+0.0146,merge.load,1,102.098,
+0.0165,merge.aggregate,1,102.098,
+0.0199,merge.aggregate,1,102.355,
+0.0202,merge.postprocess,1,102.355,
+0.1844,merge.postprocess,1,110.605,
+0.1847,merge.write_outputs,1,110.605,
+0.6333,merge.write_outputs,1,118.965,
+0.6661,merge.write_outputs,1,118.965,
+0.6683,(unmarked),0,117.105,

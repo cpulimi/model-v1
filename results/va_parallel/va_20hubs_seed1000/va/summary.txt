@@ -1,0 +1,19 @@
+============================================================================
+VA FINAL RESULTS
+============================================================================
+  total cost:                 $10,983,883.57
+  inventory cost:             $419,171.87
+  fixed open-hub cost:        $10,000,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $35,750.00
+  assignment transport cost:  $528,961.70
+  open hubs:                  20
+  closed hubs:                0
+  stocked hub-part pairs:     2,342
+  hub-zip-part pairings:      5,996
+  structural violations:      0
+  SLA distance violations:    941
+  wall time:                  1,608.96s
+  peak/current host RSS:      480.3/117.1 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/va_parallel/va_20hubs_seed1000/va
+============================================================================

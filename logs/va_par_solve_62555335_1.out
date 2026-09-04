@@ -1,0 +1,32 @@
+>>> conda env: qubo
+>>> host        sfpga01n
+>>> python      /packages/apps/mamba/2.6.2/bin/python3 -- Python 3.13.13
+>>> VA dir      /opt/va/V3.0.0/libexec/VectorAnnealing/python
+>>> VE devices  /dev/ve0 /dev/veslot0 
+>>> interpreter OK
+>>> batch 1 of run va_20hubs_seed1000 (instances_20hubs)
+>>> mode=solve run_root=/home/cpulimi/ModelV1/model-v1/results/va_parallel/va_20hubs_seed1000
+
+============================================================================
+VA PARALLEL SOLVE - batch 1/1
+============================================================================
+  dataset:      instances_20hubs
+  demand rows:  5,996
+  est Z vars:   6,261
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/va_parallel/va_20hubs_seed1000/parallel_work
+============================================================================
+VectorAnnealing imported (local on-prem module; no service client).
+  module file:     /opt/va/V3.0.0/libexec/VectorAnnealing/python/VectorAnnealing/__init__.py
+  module version:  <module exposes no version attribute>
+  python:          3.13.13 | packaged by conda-forge | (main, Apr  8 2026, 02:00:33) [GCC 14.3.0]
+  hostname:        sfpga01n
+  VE_NODE_NUMBER:  <unset>
+  VE devices:      2 device node(s) = 1 card(s) -> /dev/ve0, /dev/veslot0
+
+=== VA Batch 1 | 150 parts | 5,996 demand rows | estimated Z=6,261 ===
+  [1/3] Formulating and compiling the PyQUBO model...
+    built in 0.50s (pyqubo expression 0.39s + compile 0.04s) | Z=6,261 Y=2,378 X=20 total_vars=8,659 interactions=17,563
+    penalties: C1=50,000.00 C2=50,000.00 C3=50,000.00
+    to_qubo offset (C1 constant): 299,800,000.00 -> held at 0.0 for VA (fp32 headroom + OpenJij comparability)
+  [2/3] Sampling with VectorAnnealing | reads=112 sweeps=3000 vector_mode=ACCURACY beta_range=VA default [10,100,200] | repeats=1 | adaptive=within-batch (max 8 iters, growth 1.5)
+    adaptive iter 1/8 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | penalties C1=50,000 C2=50,000 C3=50,000 | offset=299,800,000
