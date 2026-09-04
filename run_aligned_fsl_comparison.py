@@ -139,6 +139,45 @@ def fmt_number(x: float | int | None, decimals: int = 2) -> str:
     return f"{float(x):,.{decimals}f}"
 
 
+def _proc_status_kb(field: str) -> float:
+    """One numeric field from /proc/self/status, in kB. 0.0 off Linux or on error."""
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith(field + ":"):
+                    return float(line.split()[1])
+    except Exception:
+        pass
+    return 0.0
+
+
+def vm_hwm_mb() -> float:
+    """Kernel peak RSS from /proc/self/status VmHWM, in MB. Linux only; 0.0 elsewhere.
+
+    This is the whole-process high-water mark maintained by the kernel, so it
+    includes Gurobi's C-level model and search tree -- memory that tracemalloc
+    cannot see at all. It is monotonic and exact, so it cannot miss a spike
+    between two samples the way a polled RSS reading can.
+
+    Mirrors vm_hwm_mb() in run_va_fsl_solver.py so the Gurobi and VA numbers
+    are the same quantity and can be put side by side.
+    """
+    return _proc_status_kb("VmHWM") / 1024.0
+
+
+def tracemalloc_peak_mb() -> float:
+    """Python-allocator peak in MB, or 0.0 if tracemalloc is not running.
+
+    Retained only as the legacy `python_alloc_peak_mb` diagnostic. It systematically
+    understates a Gurobi run because the solver allocates outside CPython.
+    """
+    try:
+        _current, peak = tracemalloc.get_traced_memory()
+        return peak / (1024.0 * 1024.0)
+    except Exception:
+        return 0.0
+
+
 def peak_or_current_rss_mb() -> float:
     """Best-effort peak or current RSS in MB, cross-platform."""
     if psutil is not None:
@@ -808,21 +847,60 @@ def run_gurobi_solver(args: argparse.Namespace) -> dict[str, Any]:
     pd.DataFrame(overflow_rows, columns=["hub_id", "W_j"]).to_csv(run_dir / "overflow.csv", index=False)
 
     wall = time.perf_counter() - start
-    peak_mb, current_mb = memory_report_mb()
+
+    # ---- memory accounting v2 -------------------------------------------------
+    # peak_memory_mb is now the kernel's whole-process RSS high-water mark
+    # (/proc/self/status VmHWM), which is the SAME quantity that
+    # run_va_fsl_solver.py / run_va_parallel_batches.py report under
+    # memory_accounting_version=2. The two are therefore directly comparable.
+    #
+    # The old blended max(tracemalloc_peak, rss_sample, current) is preserved as
+    # python_alloc_peak_mb / legacy_blended_peak_mb. tracemalloc only sees CPython
+    # allocations, so on the Gurobi path it misses the C-level model and search
+    # tree entirely and understates badly; it is kept for continuity with older
+    # runs, not for comparison against annealing.
+    legacy_peak_mb, current_mb = memory_report_mb()
+    python_alloc_peak_mb = tracemalloc_peak_mb()
+    hwm_mb = vm_hwm_mb()
+    if hwm_mb > 0.0:
+        peak_mb = hwm_mb
+        peak_source = "proc_self_status_vmhwm"
+    else:
+        # Not Linux (or /proc unreadable). Fall back rather than report 0, but
+        # say so explicitly so the number is never silently mistaken for VmHWM.
+        peak_mb = max(legacy_peak_mb, peak_or_current_rss_mb())
+        peak_source = "fallback_rss_sample"
+
     runtime = {
         "wall_seconds": float(wall),
         "solver_runtime_seconds": float(model.Runtime),
-        # NOTE: this peak_memory_mb is the OLD blended max(tracemalloc_peak,
-        # rss_peak, current) and is NOT comparable to the VA path's field of the
-        # same name. run_va_fsl_solver.py / run_va_parallel_batches.py now report
-        # a pure host RSS high-water mark and stamp memory_accounting_version=2;
-        # this OpenJij comparison runner was deliberately left on the old
-        # semantics. Do not put the two side by side in one table without saying
-        # which is which.
         "peak_memory_mb": float(peak_mb),
+        "peak_memory_source": peak_source,
+        "memory_accounting_version": 2,
+        "python_alloc_peak_mb": float(python_alloc_peak_mb),
+        "legacy_blended_peak_mb": float(legacy_peak_mb),
         "current_memory_mb": float(current_mb),
     }
+
+    # ---- gurobi result v2 -----------------------------------------------------
+    # Each attribute is fetched in its own try/except returning None. A run that
+    # hits TIME_LIMIT still has a valid ObjBound, and without it there is no
+    # optimality bracket at all -- so a single missing attribute must never take
+    # the whole summary down with it.
+    def _attr(fn: Any, cast: Any = float) -> Any:
+        try:
+            value = fn()
+        except Exception:
+            return None
+        if value is None:
+            return None
+        try:
+            return cast(value)
+        except Exception:
+            return None
+
     extra = {
+        "gurobi_result_version": 2,
         "gurobi_status": status_name,
         "gurobi_status_code": int(model.Status),
         "gurobi_objective": float(model.ObjVal),
@@ -830,6 +908,19 @@ def run_gurobi_solver(args: argparse.Namespace) -> dict[str, Any]:
         "num_variables": int(model.NumVars),
         "num_constraints": int(model.NumConstrs),
         "has_incumbent_solution": bool(model.SolCount > 0),
+        # Optimality bracket: [obj_bound, gurobi_objective] for a MINIMIZE model.
+        "obj_bound": _attr(lambda: model.ObjBound),
+        "obj_bound_c": _attr(lambda: model.ObjBoundC),
+        "mip_gap_achieved": _attr(lambda: model.MIPGap),
+        "node_count": _attr(lambda: model.NodeCount),
+        "gurobi_runtime": _attr(lambda: model.Runtime),
+        # The Threads parameter as the model holds it. Note this is the value we
+        # set, not the count Gurobi ultimately spawned -- 0 here means "Gurobi
+        # chose", which is exactly the case the sbatch scripts avoid by pinning
+        # --threads to the task's core count. The true count is in gurobi.log.
+        "threads_resolved": _attr(lambda: model.Params.Threads, int),
+        "mip_gap_requested": _attr(lambda: args.mip_gap),
+        "seed_used": _attr(lambda: args.seed, int),
     }
     summary = write_solution_outputs(
         run_dir,
