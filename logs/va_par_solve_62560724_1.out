@@ -1,0 +1,62 @@
+>>> conda env: qubo
+>>> host        sfpga01n
+>>> python      /packages/apps/mamba/2.6.2/bin/python3 -- Python 3.13.13
+>>> VA dir      /opt/va/V3.0.0/libexec/VectorAnnealing/python
+>>> VE devices  /dev/ve0 /dev/veslot0 
+>>> interpreter OK
+>>> batch 1 of run va_20hubs_seed2026 (instances_20hubs)
+>>> mode=solve run_root=/home/cpulimi/ModelV1/model-v1/results/va_parallel/va_20hubs_seed2026
+
+============================================================================
+VA PARALLEL SOLVE - batch 1/1
+============================================================================
+  dataset:      instances_20hubs
+  demand rows:  5,996
+  est Z vars:   6,261
+  work dir:     /home/cpulimi/ModelV1/model-v1/results/va_parallel/va_20hubs_seed2026/parallel_work
+============================================================================
+VectorAnnealing imported (local on-prem module; no service client).
+  module file:     /opt/va/V3.0.0/libexec/VectorAnnealing/python/VectorAnnealing/__init__.py
+  module version:  <module exposes no version attribute>
+  python:          3.13.13 | packaged by conda-forge | (main, Apr  8 2026, 02:00:33) [GCC 14.3.0]
+  hostname:        sfpga01n
+  VE_NODE_NUMBER:  <unset>
+  VE devices:      2 device node(s) = 1 card(s) -> /dev/ve0, /dev/veslot0
+
+=== VA Batch 1 | 150 parts | 5,996 demand rows | estimated Z=6,261 ===
+  [1/3] Formulating and compiling the PyQUBO model...
+    built in 0.50s (pyqubo expression 0.39s + compile 0.05s) | Z=6,261 Y=2,378 X=20 total_vars=8,659 interactions=17,563
+    penalties: C1=50,000.00 C2=50,000.00 C3=50,000.00
+    to_qubo offset (C1 constant): 299,800,000.00 -> held at 0.0 for VA (fp32 headroom + OpenJij comparability)
+  [2/3] Sampling with VectorAnnealing | reads=112 sweeps=3000 vector_mode=ACCURACY beta_range=VA default [10,100,200] | repeats=1 | adaptive=within-batch (max 8 iters, growth 1.5)
+    adaptive iter 1/8 | multipliers c1=1.00 c2=1.00 c3=1.00 c4=1.00 | penalties C1=50,000 C2=50,000 C3=50,000 | offset=299,800,000
+    iter 1 repeat 1 attempt 1: 112 reads in 1598.60s | constraint satisfied 112/112
+    iter 1 repeat 1 | energy min/med/max = -288,815,420.00 / -288,814,135.15 / -288,812,893.47 | cost min/med/max = 10,984,580.00 / 10,985,864.85 / 10,987,106.53 | structurally feasible reads 112/112
+    adaptive feasible at iter 1
+  [3/3] Batch selected | OK | aligned cost=$10,984,580.00 | total_time=1605.57s
+    matrix: density=0.035300% (26,467 non-zero of 74,978,281 cells) | avg couplings/var=2.1 | VA dense alloc 286.0 MiB vs sparse 205.8 KiB (1,423x)
+
+  VE DEVICE MEMORY (card-side; never added to host RSS)
+    HBM capacity:        <unknown>  [unknown]
+    predicted (dense):   286.0 MiB
+    OBSERVED peak:       <none: no runtime device readout on this install>
+    note: result.memory_usage=1.19140625 recorded raw. Unit is not documented; observed_peak_device_bytes NOT populated. Once the unit is confirmed, promote from raw to bytes. HBM capacity is also unreadable here; pass --ve-hbm-gb to record it explicitly.
+
+============================================================================================
+HOST MEMORY BY PHASE - batch 1
+============================================================================================
+  phase                                n    wall s  RSS peak MB   HWM+ MB  HWM+ self
+  solve.sample_eval                    1      5.95        455.6     175.0      175.0
+  solve.va_model_build                 1      0.51        251.2      64.2       64.2
+  solve.pyqubo_compile                 1      0.05        178.2      57.6       57.6
+  solve.va_sample                      1  1,598.60        280.6      29.4       29.4
+  solve                                2  1,605.57        455.6     349.8       14.2
+  solve.to_qubo                        1      0.05        187.0       8.8        8.8
+  solve.pyqubo_express                 1      0.07        120.6       0.5        0.5
+
+  Host peak is driven by: solve.sample_eval (+175.0 MB of the process high-water mark)
+============================================================================================
+
+  saved batch 1 -> batch_0001.pkl | solve=1605.83s rss_peak=480.6 MB | raw violations=0
+>>> slurm mem: batch1 cgroup_peak=58563.3MB MaxRSS=<pending> MaxVMSize=<pending> ReqMem=<pending> Elapsed=<pending>
+>>>   MaxRSS is blank because this job has not ended yet. va_par_acct.sh will append the final post_hoc row.

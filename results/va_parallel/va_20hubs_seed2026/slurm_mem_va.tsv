@@ -1,0 +1,5 @@
+JobID	Label	Source	CgroupPeakMB	MaxRSS	MaxVMSize	ReqMem	Elapsed	State
+62560724_1	batch1	in_job	58563.3					RUNNING
+62560725	merge	in_job	509179.7					RUNNING
+62560724_1	batch1	post_hoc		448.41M	230.31M		00:27:04	COMPLETED
+62560725	merge	post_hoc		152.37M	59.40M		00:00:21	COMPLETED

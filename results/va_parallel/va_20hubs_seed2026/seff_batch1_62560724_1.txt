@@ -1,0 +1,12 @@
+Job ID: 62560724
+Array Job ID: 62560724_1
+Cluster: sol
+User/Group: cpulimi/grp_fowler
+State: COMPLETED (exit code 0)
+Nodes: 1
+Cores per node: 8
+CPU Utilized: 00:00:12
+CPU Efficiency: 0.09% of 03:36:32 core-walltime
+Job Wall-clock time: 00:27:04
+Memory Utilized: 448.41 MB
+Memory Efficiency: 0.68% of 64.00 GB (64.00 GB/node)

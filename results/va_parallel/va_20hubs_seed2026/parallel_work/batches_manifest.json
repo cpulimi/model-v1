@@ -1,0 +1,30 @@
+{
+  "run_name": "va_20hubs_seed2026",
+  "dataset_name": "instances_20hubs",
+  "total_batches": 1,
+  "batch_ids": [
+    1
+  ],
+  "batching_signature": {
+    "dataset_dir": "instances_20hubs",
+    "max_service_miles": null,
+    "penalty_start_miles": null,
+    "top_hubs_per_zip": -1,
+    "max_parts_total": -1,
+    "part_batch_size": 1000,
+    "max_z_vars_per_batch": 40000
+  },
+  "max_batch_vars": 8659,
+  "va_max_vars_per_batch": 60000,
+  "batches": [
+    {
+      "batch_id": 1,
+      "num_rows": 5996,
+      "num_z": 6261,
+      "num_y": 2378,
+      "num_x": 20,
+      "total_vars": 8659,
+      "dense_matrix_bytes": 299913124
+    }
+  ]
+}

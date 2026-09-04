@@ -1,0 +1,12 @@
+Job ID: 62555431
+Array Job ID: 62555431_1
+Cluster: sol
+User/Group: cpulimi/grp_fowler
+State: COMPLETED (exit code 0)
+Nodes: 1
+Cores per node: 8
+CPU Utilized: 00:00:12
+CPU Efficiency: 0.09% of 03:36:24 core-walltime
+Job Wall-clock time: 00:27:03
+Memory Utilized: 447.35 MB
+Memory Efficiency: 0.68% of 64.00 GB (64.00 GB/node)
