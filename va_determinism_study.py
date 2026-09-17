@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import statistics
 import subprocess
@@ -39,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 BAR = "=" * 86
 FIELDS = [
     "arm", "run_index", "seed", "rc", "wall_seconds",
-    "n_open_hubs", "open_hubs", "total_cost",
+    "n_open_hubs", "open_hubs", "total_cost", "gap_pct",
     "peak_host_rss_mb", "stocked_pairs", "assignments",
     "structural_violations", "c1", "c2", "c3", "c4_hubs_over_L",
     "sla_violations", "max_service_violations",
@@ -55,20 +56,35 @@ INVARIANT = [
 ]
 
 
-def build_plan(n: int, fixed_seed: int, arms: str = "AB") -> list[tuple[str, int, int]]:
-    """(arm, run_index, seed). Arm A pins the seed; Arm B varies it 1..n.
+def build_plan(n: int, fixed_seed: int, arms: str = "AB",
+               seeds: list[int] | None = None) -> list[tuple[str, int, int]]:
+    """(arm, run_index, seed). Arm A pins the seed; Arm B varies it.
 
     `arms` selects which to run. Running B alone is legitimate when the card is
     scarce -- B is the arm that carries the scaling/seed-sensitivity result --
     but without A there is no gate, so any variation B shows cannot be
     attributed to the annealer rather than the harness. The summary says so.
+
+    `seeds` overrides Arm B's default 1..n. The default is a terrible sample for
+    the question actually being asked: 1..10 are all tiny and all adjacent, so
+    they cannot distinguish "the seed does nothing" from "the seed matters but
+    only across orders of magnitude". Pass a list spanning several decades
+    instead -- see SEED_LADDER.
     """
     plan: list[tuple[str, int, int]] = []
     if "A" in arms.upper():
         plan += [("A", i, fixed_seed) for i in range(1, n + 1)]
     if "B" in arms.upper():
-        plan += [("B", i, i) for i in range(1, n + 1)]
+        chosen = list(seeds) if seeds else list(range(1, n + 1))
+        plan += [("B", i, s) for i, s in enumerate(chosen, start=1)]
     return plan
+
+
+# A seed sample designed to falsify "bigger seed -> better cost". Spans six
+# orders of magnitude, is NOT sorted by magnitude in run order, and includes the
+# three already-run values (42, 1000, 2026) so those runs are reused rather than
+# repeated -- each one is ~27 minutes of a single shared card.
+SEED_LADDER = [42, 7, 1000, 123456, 3, 2026, 99991, 500, 8675309, 17, 31337, 2]
 
 
 def read_result(run_root: Path) -> dict | None:
@@ -110,6 +126,76 @@ def read_result(run_root: Path) -> dict | None:
     }
 
 
+GUROBI_OPTIMA_CSV = Path("results/gurobi_optima/gurobi_optima.csv")
+
+
+def gurobi_optimum(dataset_dir: str) -> float | None:
+    """The proven optimum for this instance, or None if it was never solved.
+
+    Only rows Gurobi closed at gap 0.0 are returned. An incumbent from a run that
+    hit a time limit is not an optimum and must not be used as a denominator --
+    a "gap" measured against it can come out negative and would be nonsense.
+    """
+    path = Path(GUROBI_OPTIMA_CSV)
+    if not path.is_file():
+        return None
+    want = Path(dataset_dir).name
+    with open(path, newline="", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            if str(r.get("instance", "")) == want and \
+                    str(r.get("proven_optimal", "")).strip().lower() == "true":
+                return float(r["total_cost"])
+    return None
+
+
+def add_gap(row: dict, opt: float | None) -> dict:
+    """Percent above the proven optimum. Blank when no optimum is known."""
+    row["gap_pct"] = ""
+    if opt and row.get("total_cost"):
+        try:
+            row["gap_pct"] = round(100.0 * (float(row["total_cost"]) - opt) / opt, 6)
+        except (TypeError, ValueError):
+            pass
+    return row
+
+
+def import_external_runs(sources: list[str], out: Path, dataset_dir: str) -> int:
+    """Fold already-finished solver runs into the study CSV as Arm B rows.
+
+    The three 20-hub seed runs (42, 1000, 2026) were produced by hand through
+    run_va_parallel_batches.py before this harness existed. They are perfectly
+    good Arm B samples and each cost ~27 minutes on the one shared VE card, so
+    they are imported rather than repeated. The seed is read from the run's own
+    summary.json, never inferred from the directory name.
+    """
+    csv_path = out / "determinism_runs.csv"
+    have = {(r["arm"], str(r["seed"])) for r in load_rows(csv_path)}
+    opt = gurobi_optimum(dataset_dir)
+    n = 0
+    for src_dir in sources:
+        run_root = Path(src_dir).expanduser().resolve()
+        got = read_result(run_root)
+        if got is None:
+            print(f"  IMPORT SKIP {run_root} -- no va/summary.json")
+            continue
+        try:
+            with open(run_root / "va" / "summary.json", encoding="utf-8") as fh:
+                seed = json.load(fh)["extra"]["va"]["seed"]
+        except (KeyError, OSError, ValueError) as exc:
+            print(f"  IMPORT SKIP {run_root} -- seed unreadable ({exc})")
+            continue
+        if ("B", str(seed)) in have:
+            print(f"  IMPORT SKIP seed={seed} -- already in CSV")
+            continue
+        row = {"arm": "B", "run_index": 900 + n, "seed": int(seed), "rc": 0,
+               "wall_seconds": "", "run_dir": str(run_root), **got}
+        append_row(csv_path, add_gap(row, opt))
+        have.add(("B", str(seed)))
+        print(f"  IMPORTED seed={seed}  cost={float(row['total_cost']):,.2f}  from {run_root.name}")
+        n += 1
+    return n
+
+
 def run_one(a: argparse.Namespace, arm: str, idx: int, seed: int, out: Path) -> dict:
     run_root = out / "runs" / f"{arm}_{idx:02d}_seed{seed}"
     existing = read_result(run_root)
@@ -144,6 +230,7 @@ def run_one(a: argparse.Namespace, arm: str, idx: int, seed: int, out: Path) -> 
         row["rc"] = int(proc.returncode) or -1
     else:
         row.update(got)
+        add_gap(row, gurobi_optimum(a.dataset_dir))
         print(f"  [{arm}{idx:02d}] ok in {wall:,.0f}s | hubs={row['n_open_hubs']} "
               f"cost={float(row['total_cost']):,.2f} rss={row['peak_host_rss_mb']:,.0f}MB "
               f"viol={row['structural_violations']}", flush=True)
@@ -151,8 +238,28 @@ def run_one(a: argparse.Namespace, arm: str, idx: int, seed: int, out: Path) -> 
 
 
 def append_row(csv_path: Path, row: dict) -> None:
-    new = not csv_path.is_file()
+    """Append one run, migrating the header first if FIELDS has grown.
+
+    Appending a wider row to a CSV written under an older FIELDS list silently
+    shifts every value one column right from that point on, and the file still
+    parses -- so the corruption only shows up as nonsense in the summary. When
+    the on-disk header differs, the existing rows are rewritten under the new
+    header with blanks for the columns they never had.
+    """
     csv_path.parent.mkdir(parents=True, exist_ok=True)
+    if csv_path.is_file():
+        with open(csv_path, newline="", encoding="utf-8") as fh:
+            rdr = csv.reader(fh)
+            header = next(rdr, None)
+        if header is not None and header != list(FIELDS):
+            old_rows = load_rows(csv_path)
+            with open(csv_path, "w", newline="", encoding="utf-8") as fh:
+                w = csv.DictWriter(fh, fieldnames=FIELDS, extrasaction="ignore")
+                w.writeheader()
+                for r in old_rows:
+                    w.writerow({f: r.get(f, "") for f in FIELDS})
+            print(f"  (migrated {csv_path.name} to the current column set)")
+    new = not csv_path.is_file()
     with open(csv_path, "a", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS, extrasaction="ignore")
         if new:
@@ -178,6 +285,111 @@ def spread(values: list[float]) -> dict:
         "median": statistics.median(values),
         "distinct": len({repr(v) for v in values}),
     }
+
+
+def _ranks(values: list[float]) -> list[float]:
+    """Ranks with ties averaged, which is what Spearman requires."""
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        avg = (i + j) / 2.0 + 1.0
+        for t in range(i, j + 1):
+            ranks[order[t]] = avg
+        i = j + 1
+    return ranks
+
+
+def _pearson(x: list[float], y: list[float]) -> float:
+    n = len(x)
+    mx, my = statistics.fmean(x), statistics.fmean(y)
+    num = math.fsum((a - mx) * (b - my) for a, b in zip(x, y))
+    dx = math.sqrt(math.fsum((a - mx) ** 2 for a in x))
+    dy = math.sqrt(math.fsum((b - my) ** 2 for b in y))
+    return 0.0 if dx == 0 or dy == 0 else num / (dx * dy)
+
+
+def seed_trend_test(seeds: list[int], costs: list[float]) -> dict:
+    """Does a larger seed give a lower cost? Spearman rho + an exact p-value.
+
+    THE CLAIM UNDER TEST. Three runs -- seeds 42, 1000 and 2026 -- came back in
+    descending cost order, which looks like "bigger seed, better answer". With
+    three points that ordering has probability 1/6 = 0.167 by chance alone, so
+    the observation is indistinguishable from a coin landing heads twice.
+
+    A seed feeds a pseudo-random number generator. Its MAGNITUDE carries no
+    information: 8,675,309 is not a "more thorough" starting point than 3. If a
+    real monotone trend survives a dozen seeds spanning six orders of magnitude,
+    the finding is not "use big seeds", it is "this RNG is not seeding properly",
+    which is a bug report about the annealer.
+
+    The p-value is the exact permutation test -- every ordering of the observed
+    costs, counted -- while n! is tractable, and a fixed-seed Monte Carlo
+    approximation above that. It is one-sided: the alternative is specifically
+    rho < 0 (cost falls as the seed rises), because that is the direction that
+    was eyeballed. Testing two-sided after seeing the direction would be
+    double-dipping.
+    """
+    n = len(seeds)
+    if n < 3:
+        return {"n": n, "verdict": "too few runs to test"}
+
+    # Every seed returning the same cost is not a weak trend, it is no trend at
+    # all -- and on a geometrically forced instance it is the expected answer.
+    # Left to the general path it would come out rho=0 and be described as
+    # "the sign is wrong", which reads as a finding where there is none.
+    if len({repr(c) for c in costs}) == 1:
+        return {"n": n, "rho": 0.0, "p_one_sided": 1.0,
+                "method": "not applicable -- zero variance",
+                "verdict": ("NO VARIATION TO EXPLAIN. Every seed returned exactly "
+                            f"{costs[0]:,.4f}. There is no trend because there is no "
+                            "spread; check whether the instance leaves the solver any "
+                            "freedom at all before reading this as stability.")}
+
+    sr, cr = _ranks([float(s) for s in seeds]), _ranks(costs)
+    rho = _pearson(sr, cr)
+
+    import itertools
+    import random
+
+    exact = n <= 8
+    if exact:
+        total = hits = 0
+        for perm in itertools.permutations(cr):
+            total += 1
+            if _pearson(sr, list(perm)) <= rho + 1e-12:
+                hits += 1
+        p = hits / total
+        method = f"exact permutation ({total:,} orderings)"
+    else:
+        rng = random.Random(20260917)   # fixed: the p-value must reproduce
+        trials, hits = 20000, 0
+        shuf = list(cr)
+        for _ in range(trials):
+            rng.shuffle(shuf)
+            if _pearson(sr, shuf) <= rho + 1e-12:
+                hits += 1
+        p = (hits + 1) / (trials + 1)   # add-one: never report p = 0
+        method = f"Monte Carlo ({trials:,} shuffles, fixed rng seed)"
+
+    if p < 0.05 and rho < 0:
+        verdict = ("SUPPORTED at p<0.05 -- and that is a RED FLAG, not a result. "
+                   "A PRNG seed should carry no ordering information; a real "
+                   "monotone trend means the seed is not being consumed as a "
+                   "seed. Investigate the annealer's seeding before reporting "
+                   "this as a tuning knob.")
+    elif rho < 0:
+        verdict = ("NOT SUPPORTED. The downward slope is within what random "
+                   "ordering produces. Report the seed spread as noise around a "
+                   "central value, not as a trend.")
+    else:
+        verdict = ("NOT SUPPORTED, and the sign is wrong -- cost rises with seed "
+                   "in this sample. Noise.")
+
+    return {"n": n, "rho": rho, "p_one_sided": p, "method": method, "verdict": verdict}
 
 
 def geometry_caveat(dataset_dir: str) -> str:
@@ -312,6 +524,30 @@ def summarise(rows: list[dict], dataset_dir: str) -> None:
             print(f"      Genuine cost spread: {s['range']:,.4f} "
                   f"({100.0 * s['cv']:.4f}% CV) across seeds.")
 
+        # ---- the seed-magnitude question --------------------------------
+        seeds = [int(r["seed"]) for r in B]
+        opt = gurobi_optimum(dataset_dir)
+        print("\n    per-seed results (ascending seed):")
+        width = "      {:>10}  {:>18}" + ("  {:>8}" if opt else "{}")
+        print(width.format("seed", "total cost", "gap%" if opt else ""))
+        for r in sorted(B, key=lambda r: int(r["seed"])):
+            c = float(r["total_cost"])
+            gap = f"{100.0 * (c - opt) / opt:8.4f}" if opt else ""
+            print(f"      {int(r['seed']):>10,}  {c:>18,.2f}  {gap}")
+        if opt:
+            print(f"      {'GUROBI':>10}  {opt:>18,.2f}  {0.0:8.4f}   (proven optimal)")
+
+        t = seed_trend_test(seeds, costs)
+        print("\n    TREND TEST -- does a larger seed give a lower cost?")
+        if t.get("rho") is None:
+            print(f"      {t['verdict']}")
+        else:
+            print(f"      n={t['n']}  Spearman rho={t['rho']:+.4f}  "
+                  f"p={t['p_one_sided']:.4f} (one-sided, rho<0)")
+            print(f"      method: {t['method']}")
+            for line in _wrap(t["verdict"], 74):
+                print(f"      {line}")
+
     print("\n  " + "-" * 82)
     print("  INSTANCE CAVEAT")
     print("  " + "-" * 82)
@@ -351,10 +587,33 @@ def main() -> int:
                     help="Rebuild the summary from the existing CSV; run nothing.")
     ap.add_argument("--force", action="store_true",
                     help="Re-run even runs that already have a summary.json.")
+    ap.add_argument("--seeds", default="",
+                    help="Comma-separated Arm B seeds, replacing the default 1..n. "
+                         "Use a range spanning several orders of magnitude.")
+    ap.add_argument("--seed-ladder", action="store_true",
+                    help=f"Arm B over the built-in falsification ladder: {SEED_LADDER}. "
+                         "Twelve seeds across six decades, deliberately not in "
+                         "magnitude order, including the three already run.")
+    ap.add_argument("--import-run", action="append", default=[],
+                    help="Fold an existing finished run directory in as an Arm B "
+                         "sample instead of spending card time repeating it. Repeat.")
     a = ap.parse_args()
+
+    seeds: list[int] | None = None
+    if a.seed_ladder:
+        seeds = list(SEED_LADDER)
+    if a.seeds:
+        seeds = [int(s) for s in a.seeds.split(",") if s.strip()]
+    if seeds and len(set(seeds)) != len(seeds):
+        ap.error("duplicate seeds: a repeated seed is an Arm A control, not an Arm B sample")
 
     out = Path(a.out).expanduser().resolve()
     csv_path = out / "determinism_runs.csv"
+
+    if a.import_run:
+        out.mkdir(parents=True, exist_ok=True)
+        n = import_external_runs(a.import_run, out, a.dataset_dir)
+        print(f"  imported {n} run(s)")
 
     if a.analyze_only:
         rows = load_rows(csv_path)
@@ -365,7 +624,7 @@ def main() -> int:
         print(f"\n  CSV: {csv_path}")
         return 0
 
-    plan = build_plan(a.runs_per_arm, a.fixed_seed, a.arms)
+    plan = build_plan(a.runs_per_arm, a.fixed_seed, a.arms, seeds)
     print(BAR)
     print("DETERMINISM STUDY")
     print(BAR)
@@ -375,7 +634,8 @@ def main() -> int:
     else:
         print("  arm A        SKIPPED -- no control arm, so Arm B has no gate")
     if "B" in a.arms:
-        print(f"  arm B        {a.runs_per_arm} runs, --va-seed 1..{a.runs_per_arm}")
+        b_seeds = [s for arm, _, s in plan if arm == "B"]
+        print(f"  arm B        {len(b_seeds)} runs, --va-seed {b_seeds}")
     print(f"  extra flags  {a.solver_flag or '<none>'}  (identical in both arms)")
     print(f"  PYTHONHASHSEED=0 forced for every run")
     print(f"  output       {out}")
