@@ -1,0 +1,61 @@
+>>> conda env: qubo
+>>> host        sfpga01n
+>>> python      /home/cpulimi/.conda/envs/qubo/bin/python3 -- Python 3.11.15
+>>> VA dir      /opt/va/V3.0.0/libexec/VectorAnnealing/python
+>>> VE devices  /dev/ve0 /dev/veslot0 
+>>> interpreter OK
+>>> VA seed ladder
+>>>   dataset      instances_50hubs
+>>>   seeds        8675309
+>>>   arm A        0 runs at fixed seed 42 (the gate)
+>>>   imports      0 argument(s)
+>>>   output       results/determinism_50hubs
+>>>   PYTHONHASHSEED=0
+======================================================================================
+DETERMINISM STUDY
+======================================================================================
+  instance     instances_50hubs
+  arm A        0 runs, --va-seed 42 (fixed)
+  arm B        1 runs, --va-seed [8675309]
+  extra flags  <none>  (identical in both arms)
+  PYTHONHASHSEED=0 forced for every run
+  output       /home/cpulimi/ModelV1/model-v1/results/determinism_50hubs
+  NOTE: one VE card, so runs are sequential. 1 runs total.
+======================================================================================
+  [B01] seed=8675309  running -> B_01_seed8675309.log
+  [B01] ok in 9,812s | hubs=50 cost=27,782,906.22 rss=1,745MB viol=0
+
+======================================================================================
+DETERMINISM STUDY SUMMARY
+======================================================================================
+  instance: instances_50hubs
+  runs: 1 usable (0 arm A, 1 arm B)
+  PYTHONHASHSEED recorded in runs: ['0']
+
+  ----------------------------------------------------------------------------------
+  ARM A -- identical seed. Anything varying here is NOT the annealer.
+  ----------------------------------------------------------------------------------
+    NOT RUN. Without the fixed-seed control there is no gate: any variation
+    Arm B shows cannot be attributed to the annealer rather than the harness.
+    Re-run with --arms A to add it (the runs are independent and resumable).
+
+  ----------------------------------------------------------------------------------
+  ARM B -- varying seed. Variation here IS the annealer.
+  ----------------------------------------------------------------------------------
+    too few runs to judge
+
+  ----------------------------------------------------------------------------------
+  INSTANCE CAVEAT
+  ----------------------------------------------------------------------------------
+    ALL 50 hubs are FORCED open by geometry (13,042 of 15,126 demand rows have
+    exactly one reachable hub). The open-hub set CANNOT vary on this instance, so
+    its stability below is a property of the instance, not evidence about the
+    solver. See va_instance_geometry.py.
+======================================================================================
+
+  CSV: /home/cpulimi/ModelV1/model-v1/results/determinism_50hubs/determinism_runs.csv
+>>> slurm mem: seed_ladder cgroup_peak=68832.7MB MaxRSS=<pending> MaxVMSize=<pending> ReqMem=<pending> Elapsed=<pending>
+>>>   MaxRSS is blank because this job has not ended yet. va_par_acct.sh will append the final post_hoc row.
+>>> seed ladder exited rc=0
+>>> re-read the summary any time without re-running:
+>>>   python3 va_determinism_study.py --out results/determinism_50hubs --dataset-dir instances_50hubs --analyze-only
