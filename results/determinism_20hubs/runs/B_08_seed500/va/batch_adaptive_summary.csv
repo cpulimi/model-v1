@@ -1,0 +1,2 @@
+batch_id,adaptive_iterations_used,adaptive_was_feasible,adaptive_exit_reason,final_mult_c1,final_mult_c2,final_mult_c3,final_mult_c4
+1,1,True,feasible,1.0,1.0,1.0,1.0

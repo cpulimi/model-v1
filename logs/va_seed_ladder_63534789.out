@@ -1,0 +1,135 @@
+>>> conda env: qubo
+>>> host        sfpga01n
+>>> python      /home/cpulimi/.conda/envs/qubo/bin/python3 -- Python 3.11.15
+>>> VA dir      /opt/va/V3.0.0/libexec/VectorAnnealing/python
+>>> VE devices  /dev/ve0 /dev/veslot0 
+>>> interpreter OK
+>>> VA seed ladder
+>>>   dataset      instances_20hubs
+>>>   seeds        <built-in ladder>
+>>>   arm A        3 runs at fixed seed 42 (the gate)
+>>>   imports      6 argument(s)
+>>>   output       results/determinism_20hubs
+>>>   PYTHONHASHSEED=0
+  IMPORT SKIP seed=42 -- already in CSV
+  IMPORT SKIP seed=1000 -- already in CSV
+  IMPORT SKIP seed=2026 -- already in CSV
+  imported 0 run(s)
+======================================================================================
+DETERMINISM STUDY
+======================================================================================
+  instance     instances_20hubs
+  arm A        3 runs, --va-seed 42 (fixed)
+  arm B        12 runs, --va-seed [42, 7, 1000, 123456, 3, 2026, 99991, 500, 8675309, 17, 31337, 2]
+  extra flags  <none>  (identical in both arms)
+  PYTHONHASHSEED=0 forced for every run
+  output       /home/cpulimi/ModelV1/model-v1/results/determinism_20hubs
+  NOTE: one VE card, so runs are sequential. 15 runs total.
+======================================================================================
+  [A01] seed=42  running -> A_01_seed42.log
+  [A01] ok in 1,612s | hubs=20 cost=10,983,907.92 rss=543MB viol=0
+  [A02] seed=42  running -> A_02_seed42.log
+  [A02] ok in 1,615s | hubs=20 cost=10,983,907.92 rss=542MB viol=0
+  [A03] seed=42  running -> A_03_seed42.log
+  [A03] ok in 1,622s | hubs=20 cost=10,983,907.92 rss=543MB viol=0
+  [B01] seed=42  running -> B_01_seed42.log
+  [B01] ok in 1,619s | hubs=20 cost=10,983,907.92 rss=545MB viol=0
+  [B02] seed=7  running -> B_02_seed7.log
+  [B02] ok in 1,619s | hubs=20 cost=10,982,966.43 rss=542MB viol=0
+  [B03] seed=1000  running -> B_03_seed1000.log
+  [B03] ok in 1,609s | hubs=20 cost=10,983,974.05 rss=543MB viol=0
+  [B04] seed=123456  running -> B_04_seed123456.log
+  [B04] ok in 1,612s | hubs=20 cost=10,982,793.51 rss=543MB viol=0
+  [B05] seed=3  running -> B_05_seed3.log
+  [B05] ok in 1,613s | hubs=20 cost=10,983,934.63 rss=544MB viol=0
+  [B06] seed=2026  running -> B_06_seed2026.log
+  [B06] ok in 1,610s | hubs=20 cost=10,983,697.95 rss=544MB viol=0
+  [B07] seed=99991  running -> B_07_seed99991.log
+  [B07] ok in 1,613s | hubs=20 cost=10,984,069.80 rss=545MB viol=0
+  [B08] seed=500  running -> B_08_seed500.log
+  [B08] ok in 1,607s | hubs=20 cost=10,983,736.31 rss=544MB viol=0
+  [B09] seed=8675309  running -> B_09_seed8675309.log
+  [B09] ok in 1,607s | hubs=20 cost=10,983,812.60 rss=545MB viol=0
+  [B10] seed=17  running -> B_10_seed17.log
+  [B10] ok in 1,613s | hubs=20 cost=10,983,854.04 rss=542MB viol=0
+  [B11] seed=31337  running -> B_11_seed31337.log
+  [B11] ok in 1,611s | hubs=20 cost=10,983,433.23 rss=545MB viol=0
+  [B12] seed=2  running -> B_12_seed2.log
+  [B12] ok in 1,607s | hubs=20 cost=10,983,941.45 rss=541MB viol=0
+
+======================================================================================
+DETERMINISM STUDY SUMMARY
+======================================================================================
+  instance: instances_20hubs
+  runs: 18 usable (3 arm A, 15 arm B)
+  PYTHONHASHSEED recorded in runs: ['0', '<unrecorded>']
+  *** WARNING: not every run was hash-pinned. Arm A cannot be trusted.
+
+  ----------------------------------------------------------------------------------
+  ARM A -- identical seed. Anything varying here is NOT the annealer.
+  ----------------------------------------------------------------------------------
+    3 runs at --va-seed ['42']
+    RESULT: NOTHING VARIED. Every solution field is identical across all
+            runs. No nondeterminism outside the annealer. Arm B is safe
+            to interpret.
+    (wall time varied 1,612-1,622s, mean 1,617s -- machine noise, excluded from the invariance test)
+
+  ----------------------------------------------------------------------------------
+  ARM B -- varying seed. Variation here IS the annealer.
+  ----------------------------------------------------------------------------------
+    15 runs at seeds [2, 3, 7, 17, 42, 42, 500, 1000, 1000, 2026, 2026, 31337, 99991, 123456, 8675309]
+    distinct open-hub sets: 1
+    distinct total costs:   15
+
+    cost across arm B:
+      mean       10,983,711.8178
+      stdev             413.5345   (CV 3.765e-05)
+      median     10,983,854.0420
+      min        10,982,793.5145
+      max        10,984,330.0725
+      range           1,536.5580
+
+    INTERPRETATION:
+      Hub set identical, cost VARIED -> the variation is in assignment or
+      stocking, not siting.
+
+    per-seed results (ascending seed):
+            seed          total cost      gap%
+               2       10,983,941.45    0.0823
+               3       10,983,934.63    0.0822
+               7       10,982,966.43    0.0734
+              17       10,983,854.04    0.0815
+              42       10,984,330.07    0.0858
+              42       10,983,907.92    0.0820
+             500       10,983,736.31    0.0804
+           1,000       10,983,883.57    0.0818
+           1,000       10,983,974.05    0.0826
+           2,026       10,983,341.69    0.0768
+           2,026       10,983,697.95    0.0801
+          31,337       10,983,433.23    0.0777
+          99,991       10,984,069.80    0.0835
+         123,456       10,982,793.51    0.0718
+       8,675,309       10,983,812.60    0.0811
+          GUROBI       10,974,909.44    0.0000   (proven optimal)
+
+    TREND TEST -- does a larger seed give a lower cost?
+      n=15  Spearman rho=-0.3169  p=0.1255 (one-sided, rho<0)
+      method: Monte Carlo (20,000 shuffles, fixed rng seed)
+      NOT SUPPORTED. The downward slope is within what random ordering produces.
+      Report the seed spread as noise around a central value, not as a trend.
+
+  ----------------------------------------------------------------------------------
+  INSTANCE CAVEAT
+  ----------------------------------------------------------------------------------
+    ALL 20 hubs are FORCED open by geometry (5,731 of 5,996 demand rows have exactly
+    one reachable hub). The open-hub set CANNOT vary on this instance, so its
+    stability below is a property of the instance, not evidence about the solver.
+    See va_instance_geometry.py.
+======================================================================================
+
+  CSV: /home/cpulimi/ModelV1/model-v1/results/determinism_20hubs/determinism_runs.csv
+>>> slurm mem: seed_ladder cgroup_peak=68832.7MB MaxRSS=<pending> MaxVMSize=<pending> ReqMem=<pending> Elapsed=<pending>
+>>>   MaxRSS is blank because this job has not ended yet. va_par_acct.sh will append the final post_hoc row.
+>>> seed ladder exited rc=0
+>>> re-read the summary any time without re-running:
+>>>   python3 va_determinism_study.py --out results/determinism_20hubs --dataset-dir instances_20hubs --analyze-only

@@ -1,0 +1,19 @@
+============================================================================
+VA FINAL RESULTS
+============================================================================
+  total cost:                 $10,982,966.43
+  inventory cost:             $417,772.02
+  fixed open-hub cost:        $10,000,000.00
+  overflow storage cost:      $0.00
+  new-hub transfer cost:      $35,800.00
+  assignment transport cost:  $529,394.41
+  open hubs:                  20
+  closed hubs:                0
+  stocked hub-part pairs:     2,333
+  hub-zip-part pairings:      5,996
+  structural violations:      0
+  SLA distance violations:    946
+  wall time:                  1,613.85s
+  peak/current host RSS:      542.5/504.8 MB
+  output folder:              /home/cpulimi/ModelV1/model-v1/results/determinism_20hubs/runs/B_02_seed7/va
+============================================================================
