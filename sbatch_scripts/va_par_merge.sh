@@ -63,6 +63,7 @@ python3 run_va_parallel_batches.py \
   --max-z-vars-per-batch "${VA_MAX_Z:-40000}" \
   --va-max-vars-per-batch "${VA_MAX_VARS:-60000}" \
   --num-reads "${VA_NUM_READS:-100}" \
+  $([[ "${VA_FIXED_READS:-0}" == 1 ]] && echo --fixed-num-reads) \
   --num-sweeps "${VA_NUM_SWEEPS:-3000}" \
   --penalty-mode adaptive \
   --min-penalty "${VA_MIN_PENALTY:-50000.0}" \

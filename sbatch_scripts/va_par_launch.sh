@@ -42,6 +42,9 @@ export VA_PART_BATCH_SIZE="${VA_PART_BATCH_SIZE:-1000}"
 export VA_MAX_Z="${VA_MAX_Z:-40000}"
 export VA_MAX_VARS="${VA_MAX_VARS:-60000}"
 export VA_NUM_READS="${VA_NUM_READS:-100}"
+# 1 = send VA_NUM_READS to VA as-is. 0 (default) keeps the old behaviour of
+# scaling it by sqrt(num_z/5000): 100 -> 112 -> 187 -> 265 across 10..100 hubs.
+export VA_FIXED_READS="${VA_FIXED_READS:-0}"
 export VA_NUM_SWEEPS="${VA_NUM_SWEEPS:-3000}"
 export VA_MIN_PENALTY="${VA_MIN_PENALTY:-50000.0}"
 export VA_ADAPTIVE_ITERS="${VA_ADAPTIVE_ITERS:-8}"
@@ -63,6 +66,11 @@ CONCURRENCY="${VA_CONCURRENCY:-1}"
 # Only solve needs this. Split runs here on the login node and merge runs on
 # a normal partition, so those may overlap freely.
 VA_SOLVE_DEPEND="${VA_SOLVE_DEPEND:-}"
+# Optional walltime for the SOLVE array, overriding the #SBATCH -t in
+# va_par_solve.sh (e.g. VA_SOLVE_TIME=0-06:00:00). --qubo-time-limit is only
+# checked BETWEEN batches, so on a one-batch instance the SLURM walltime is the
+# only thing that stops the solve -- size it to the whole anneal.
+VA_SOLVE_TIME="${VA_SOLVE_TIME:-}"
 
 echo ">>> project   $PROJECT"
 echo ">>> dataset   $VA_DATASET"
@@ -70,6 +78,8 @@ echo ">>> run name  $VA_RUN_NAME"
 echo ">>> outdir    $VA_OUTDIR"
 echo ">>> seed      ${VA_SEED:-<unseeded>}"
 echo ">>> depend    ${VA_SOLVE_DEPEND:-<none>}"
+echo ">>> reads     $VA_NUM_READS ($([[ "$VA_FIXED_READS" == 1 ]] && echo fixed || echo 'scaled by sqrt(num_z/5000)'))"
+echo ">>> walltime  ${VA_SOLVE_TIME:-<va_par_solve.sh default>}"
 
 # --- 1) split, here on the login node -------------------------------------
 # No card needed, so this does not queue. It also fails fast: if a batch is over
@@ -106,6 +116,7 @@ echo ">>> $N batch(es) to solve"
 # --- 2) solve array on the card -------------------------------------------
 SOLVE_ID=$(sbatch --parsable --array=1-"$N"%"$CONCURRENCY" \
   ${VA_SOLVE_DEPEND:+--dependency="$VA_SOLVE_DEPEND"} \
+  ${VA_SOLVE_TIME:+--time="$VA_SOLVE_TIME"} \
   "$PROJECT/sbatch_scripts/va_par_solve.sh")
 echo ">>> [2/3] solve array submitted: job $SOLVE_ID (tasks 1-$N, $CONCURRENCY at a time)"
 if [[ -n "$VA_SOLVE_DEPEND" ]]; then

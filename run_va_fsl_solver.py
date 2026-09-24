@@ -1836,7 +1836,9 @@ def evaluate_sample(
 
 
 def suggested_num_reads(num_z: int, args: argparse.Namespace) -> int:
-    if num_z <= 0:
+    # --fixed-num-reads holds reads constant across instance sizes, so a
+    # time-vs-N ladder measures problem growth rather than read growth.
+    if num_z <= 0 or getattr(args, "fixed_num_reads", False):
         return max(1, int(args.num_reads))
     scale = max(1.0, math.sqrt(float(num_z) / 5000.0))
     return max(1, int(math.ceil(float(args.num_reads) * scale)))
@@ -3947,6 +3949,7 @@ def run_va_solver(args: argparse.Namespace) -> dict[str, Any] | None:
                 str(s["batch_id"]): str(s["adaptive_exit_reason"]) for s in all_va_stats
             },
             "num_reads_base": int(args.num_reads),
+            "fixed_num_reads": bool(args.fixed_num_reads),
             "num_sweeps": int(args.num_sweeps),
             "vector_mode": str(args.va_vector_mode),
             "beta_range": beta_range if beta_range is not None else "VA default [10,100,200]",
@@ -4067,6 +4070,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Hard Z-variable cap used by build_batches. Caps Z only, not Y or X.")
     p.add_argument("--num-reads", type=int, default=100,
                    help="Base reads; scaled per batch by suggested_num_reads, then passed as VA num_reads.")
+    p.add_argument("--fixed-num-reads", action="store_true",
+                   help="Pass --num-reads to VA unchanged instead of scaling it by sqrt(num_z/5000).")
     p.add_argument("--num-sweeps", type=int, default=3000, help="VA num_sweeps (VA default is 500).")
     p.add_argument("--penalty-mode", choices=["fixed", "adaptive"], default="adaptive")
     p.add_argument("--min-penalty", type=float, default=50000.0,

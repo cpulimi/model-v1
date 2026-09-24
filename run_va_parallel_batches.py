@@ -579,6 +579,7 @@ def do_merge(args: argparse.Namespace, work_dir: Path, va_dir: Path) -> int:
             "precision": (str(args.va_precision) or "VA default"),
             "vector_mode": str(args.va_vector_mode),
             "num_reads_base": int(args.num_reads),
+            "fixed_num_reads": bool(args.fixed_num_reads),
             "num_sweeps": int(args.num_sweeps),
             "repeats": int(args.va_repeats),
             "adaptive_penalty_mode": str(args.adaptive_penalty_mode),
