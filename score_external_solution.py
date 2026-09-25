@@ -19,8 +19,7 @@ summary.json, and every reference is marked "rescored" or "from_summary".
 
     # Sanity check first: score the Gurobi reference solution for one instance and
     # compare against that run's summary.json. Writes nothing.
-    python3 score_external_solution.py --instances-root . --solutions-root . \\
-        --label check --check-gurobi instances_20hubs
+    python3 score_external_solution.py --instances-root . --check-gurobi instances_20hubs
 """
 from __future__ import annotations
 
@@ -62,6 +61,8 @@ BAR = "=" * 100
 METHODS = ("gurobi", "greedy", "sa", "va")
 RUN_FOLDER_METHOD = {"gurobi": "gurobi", "qubo": "sa", "va": "va"}
 OPTIMAL_GAP_TOL = 1e-9  # same tolerance as collect_gurobi_optima.py
+# A few ulps of a float64 sum. Anything larger is a real accounting difference.
+FP_REL_TOL = 1e-12
 
 COST_FIELDS = [
     "total_cost",
@@ -325,9 +326,11 @@ def discover_runs(runs_roots: list[Path], exclude: Path) -> list[dict[str, Any]]
     for root in runs_roots:
         if not root.is_dir():
             continue
+        # Skip the solutions being scored, unless they sit above the runs root.
+        skip = None if (exclude == root or exclude in root.parents) else exclude
         for sp in sorted(root.rglob("summary.json")):
             method = RUN_FOLDER_METHOD.get(sp.parent.name)
-            if method is None or exclude in sp.resolve().parents:
+            if method is None or (skip is not None and skip in sp.resolve().parents):
                 continue
             try:
                 summary = json.loads(sp.read_text(encoding="utf-8"))
@@ -554,13 +557,17 @@ def check_gurobi(inst: str, instances_root: Path, runs: list[dict[str, Any]]) ->
         print(f"    {k:14} {rel(p)}")
     s = score_solution(files, data)
     summary = run["summary"]["final_solution"]
-    ok = True
-    print(f"\n  {'field':34} {'scorer':>22} {'summary.json':>22} {'diff':>11}  exact")
+    ok = True          # every count and audit field identical, costs within rounding
+    bit_exact = True   # additionally, every cost field identical to the last bit
+    worst_rel = 0.0
+    print(f"\n  {'field':34} {'scorer':>24} {'summary.json':>24} {'diff':>11}  exact")
     for f in COST_FIELDS:
         a, b = s["cost"][f], float(summary["cost"][f])
-        exact = a == b
-        ok &= exact
-        print(f"  {f:34} {a:22.6f} {b:22.6f} {a - b:11.3e}  {exact}")
+        rel_diff = abs(a - b) / max(1.0, abs(b))
+        worst_rel = max(worst_rel, rel_diff)
+        bit_exact &= a == b
+        ok &= rel_diff <= FP_REL_TOL
+        print(f"  {f:34} {a!r:>24} {b!r:>24} {a - b:11.3e}  {a == b}")
     for f in AUDIT_FIELDS:
         a, b = s["audit"][f], int(summary["audit"][f])
         ok &= a == b
@@ -572,7 +579,16 @@ def check_gurobi(inst: str, instances_root: Path, runs: list[dict[str, Any]]) ->
         print(f"  {f:34} {a:22d} {b:22d} {a - b:11d}  {a == b}")
     print(f"\n  missing active pairs {s['missing_active_pairs']}, ineligible-hub assignments "
           f"{s['assignments_to_ineligible_hub']}, unknown ids {s['unknown_id_rows']}, feasible {is_feasible(s)}")
-    print(f"\n  RESULT: {'PASS -- every field matches summary.json exactly' if ok else 'MISMATCH'}")
+    if ok and bit_exact:
+        verdict = "PASS -- every field matches summary.json bit for bit"
+    elif ok:
+        verdict = (f"PASS -- counts and audit identical; costs agree to {worst_rel:.1e} relative. The last-bit "
+                   "difference is summation order: compute_solution_cost() sums over a Python set, whose "
+                   "order depends on PYTHONHASHSEED, so bit-exact agreement with another process is not "
+                   "guaranteed")
+    else:
+        verdict = f"MISMATCH (worst relative cost difference {worst_rel:.3e})"
+    print(f"\n  RESULT: {verdict}")
     return 0 if ok else 1
 
 
@@ -728,9 +744,9 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--instances-root", required=True, type=Path,
                     help="Folder with one subfolder per instance (six CSVs each).")
-    ap.add_argument("--solutions-root", required=True, type=Path,
+    ap.add_argument("--solutions-root", type=Path,
                     help="Folder with outputs/<instance>/ (or <instance>/) holding the three solution CSVs.")
-    ap.add_argument("--label", required=True, help="Written into every output row, e.g. opus55_high_code.")
+    ap.add_argument("--label", default="", help="Written into every output row, e.g. opus55_high_code.")
     ap.add_argument("--out", default=ROOT / "results/ai_baseline/ai_scores.csv", type=Path,
                     help="Output CSV; rows are appended.")
     ap.add_argument("--instance", action="append", default=[],
@@ -740,13 +756,16 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--greedy-csv", type=Path, default=ROOT / "results/greedy/greedy_ladder.csv")
     ap.add_argument("--check-gurobi", metavar="INSTANCE", default="",
                     help="Score the Gurobi reference solution for INSTANCE against its summary.json and exit.")
-    return ap.parse_args()
+    args = ap.parse_args()
+    if not args.check_gurobi and (args.solutions_root is None or not args.label):
+        ap.error("--solutions-root and --label are required unless --check-gurobi is given")
+    return args
 
 
 def main() -> int:
     args = parse_args()
     instances_root = args.instances_root.expanduser().resolve()
-    solutions_root = args.solutions_root.expanduser().resolve()
+    solutions_root = (args.solutions_root or instances_root).expanduser().resolve()
     runs = discover_runs([p.expanduser().resolve() for p in args.runs_roots], exclude=solutions_root)
 
     if args.check_gurobi:
