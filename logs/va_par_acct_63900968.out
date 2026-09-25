@@ -1,0 +1,13 @@
+>>> run dir   results/va_parallel/va_100hubs
+>>> accounting for jobs: 63900966 63900967
+>>> expanded to: 63900966_1 63900967
+>>> accounting flushed after attempt 1
+>>> batch1 (63900966_1): MaxRSS=3649.64M MaxVMSize=2371.13M ReqMem=<none> Elapsed=09:05:59 State=COMPLETED
+>>> merge (63900967): MaxRSS=220.60M MaxVMSize=74.62M ReqMem=<none> Elapsed=00:00:32 State=COMPLETED
+
+>>> results/va_parallel/va_100hubs/slurm_mem_va.tsv
+JobID       Label   Source    CgroupPeakMB  MaxRSS    MaxVMSize  ReqMem  Elapsed   State
+63900966_1  batch1  in_job    68832.7                                              RUNNING
+63900967    merge   in_job    509179.7                                             RUNNING
+63900966_1  batch1  post_hoc                3649.64M  2371.13M           09:05:59  COMPLETED
+63900967    merge   post_hoc                220.60M   74.62M             00:00:32  COMPLETED

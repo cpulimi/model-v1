@@ -1,0 +1,325 @@
+{
+  "solver": "va",
+  "dataset": {
+    "dataset_name": "instances_100hubs",
+    "dataset_dir": "/home/cpulimi/ModelV1/model-v1/instances_100hubs",
+    "hubs": 100,
+    "parts": 150,
+    "zips": 2000,
+    "active_demand_pairs": 28192,
+    "max_service_miles": 180.0,
+    "base_miles": 20.0,
+    "penalty_start_miles": 130.0,
+    "top_hubs_per_zip": null,
+    "max_parts_total": null
+  },
+  "final_solution": {
+    "open_hubs_count": 97,
+    "closed_hubs_count": 3,
+    "stocked_pairs_count": 11171,
+    "assignments_count": 28192,
+    "cost": {
+      "total_cost": 53745337.3635,
+      "inventory_cost": 2366093.79,
+      "fixed_open_hub_cost": 48500000.0,
+      "overflow_storage_cost": 0.0,
+      "new_hub_transfer_cost": 160150.0,
+      "assignment_transport_cost": 2719093.5735,
+      "overflow_units": 0.0
+    },
+    "audit": {
+      "c1_assignment_violations": 0,
+      "c1_missing_assignments": 0,
+      "c1_multiple_assignments": 0,
+      "c1_invalid_hub_assignments": 0,
+      "c1_extra_assignments": 0,
+      "c2_assignment_without_stock": 0,
+      "c3_stock_without_open_hub": 0,
+      "c4_hubs_over_L": 0,
+      "c4_total_overflow_units": 0,
+      "max_service_distance_violations": 0,
+      "sla_distance_violations": 4997,
+      "total_structural_violations": 0
+    }
+  },
+  "runtime": {
+    "wall_seconds": 32718.536504887044,
+    "qubo_build_seconds": 2.9383275508880615,
+    "qubo_sample_seconds": 32629.437865791842,
+    "sample_eval_seconds": 77.83702301979065,
+    "batch_total_seconds": 32713.42951989174,
+    "merge_seconds": 2.1986335311084986,
+    "postprocess_seconds": 0.8181585520505905,
+    "memory_accounting_version": 2,
+    "python_hash_seed": "0",
+    "hash_randomization_active": false,
+    "hash_order_deterministic": true,
+    "batch_python_hash_seeds": [
+      "0"
+    ],
+    "peak_memory_mb": 3663.6640625,
+    "current_memory_mb": 149.30078125,
+    "merge_rss_peak_mb": 186.65625,
+    "max_batch_rss_peak_mb": 3663.6640625,
+    "merge_python_peak_tracemalloc_mb": 35.257625579833984,
+    "max_batch_python_peak_tracemalloc_mb": 1726.4265956878662,
+    "max_batch_cgroup_peak_mb": 68832.70703125,
+    "merge_cgroup_peak_mb": 509179.6640625,
+    "max_batch_rss_children_peak_mb": 942.515625,
+    "merge_rss_children_peak_mb": 0.0,
+    "pyqubo_express_seconds": 2.1808359529823065,
+    "pyqubo_compile_seconds": 0.2634281609207392,
+    "annealing_seconds": 32629.437865791842,
+    "annealing_share_of_wall": 0.9972768146557566,
+    "host_device_crossover": {
+      "crossover_vars": null,
+      "n_points": 1,
+      "host_fit_intercept_mb": null,
+      "host_fit_slope_mb_per_var": null,
+      "host_fit_r_squared": null,
+      "vars_range": null,
+      "reason": "need >= 3 batches with paired (total_vars, rss_peak_mb) to fit an intercept and a slope; got 1. No crossover is reported: a 1- or 2-point fit is unfalsifiable, and the intercept it invents moves the answer by thousands of variables."
+    },
+    "phase_peaks_by_batch": {
+      "1": [
+        {
+          "phase": "solve.sample_eval",
+          "depth": 2,
+          "entries": 1,
+          "wall_seconds": 77.8369,
+          "rss_peak_mb": 3663.664,
+          "vm_hwm_delta_mb": 2163.246,
+          "vm_hwm_delta_self_mb": 2163.246
+        },
+        {
+          "phase": "solve.va_sample",
+          "depth": 2,
+          "entries": 1,
+          "wall_seconds": 32629.4378,
+          "rss_peak_mb": 1500.16,
+          "vm_hwm_delta_mb": 559.191,
+          "vm_hwm_delta_self_mb": 559.191
+        },
+        {
+          "phase": "solve.va_model_build",
+          "depth": 2,
+          "entries": 1,
+          "wall_seconds": 3.1818,
+          "rss_peak_mb": 940.969,
+          "vm_hwm_delta_mb": 368.414,
+          "vm_hwm_delta_self_mb": 368.414
+        },
+        {
+          "phase": "solve.pyqubo_compile",
+          "depth": 2,
+          "entries": 1,
+          "wall_seconds": 0.2633,
+          "rss_peak_mb": 506.305,
+          "vm_hwm_delta_mb": 293.418,
+          "vm_hwm_delta_self_mb": 293.418
+        },
+        {
+          "phase": "solve",
+          "depth": 1,
+          "entries": 2,
+          "wall_seconds": 32713.4246,
+          "rss_peak_mb": 3663.664,
+          "vm_hwm_delta_mb": 3542.938,
+          "vm_hwm_delta_self_mb": 90.098
+        },
+        {
+          "phase": "solve.to_qubo",
+          "depth": 2,
+          "entries": 1,
+          "wall_seconds": 0.41,
+          "rss_peak_mb": 572.555,
+          "vm_hwm_delta_mb": 66.25,
+          "vm_hwm_delta_self_mb": 66.25
+        },
+        {
+          "phase": "solve.pyqubo_express",
+          "depth": 2,
+          "entries": 1,
+          "wall_seconds": 0.3462,
+          "rss_peak_mb": 212.887,
+          "vm_hwm_delta_mb": 2.32,
+          "vm_hwm_delta_self_mb": 2.32
+        }
+      ]
+    },
+    "merge_phase_peaks": [
+      {
+        "phase": "merge.postprocess",
+        "depth": 2,
+        "entries": 1,
+        "wall_seconds": 0.818,
+        "rss_peak_mb": 154.539,
+        "vm_hwm_delta_mb": 39.445,
+        "vm_hwm_delta_self_mb": 39.445
+      },
+      {
+        "phase": "merge.write_outputs",
+        "depth": 2,
+        "entries": 1,
+        "wall_seconds": 1.3325,
+        "rss_peak_mb": 186.656,
+        "vm_hwm_delta_mb": 26.402,
+        "vm_hwm_delta_self_mb": 26.402
+      },
+      {
+        "phase": "merge.aggregate",
+        "depth": 2,
+        "entries": 1,
+        "wall_seconds": 0.014,
+        "rss_peak_mb": 118.23,
+        "vm_hwm_delta_mb": 0.0,
+        "vm_hwm_delta_self_mb": 0.0
+      },
+      {
+        "phase": "merge.load",
+        "depth": 2,
+        "entries": 1,
+        "wall_seconds": 0.032,
+        "rss_peak_mb": 117.973,
+        "vm_hwm_delta_mb": 0.0,
+        "vm_hwm_delta_self_mb": 0.0
+      }
+    ],
+    "merge_memory_trace_path": "/home/cpulimi/ModelV1/model-v1/results/va_parallel/va_100hubs/va/va_memory_trace_merge.csv"
+  },
+  "output_dir": "/home/cpulimi/ModelV1/model-v1/results/va_parallel/va_100hubs/va",
+  "extra": {
+    "completed_batches": 1,
+    "total_batches": 1,
+    "full_batch_coverage": true,
+    "stopped_due_to_time_limit": false,
+    "execution": "parallel split/solve/merge",
+    "raw_solution": {
+      "open_hubs_count": 100,
+      "stocked_pairs_count": 11673,
+      "assignments_count": 28192,
+      "cost": {
+        "total_cost": 55353650.7855,
+        "inventory_cost": 2457021.86,
+        "fixed_open_hub_cost": 50000000.0,
+        "overflow_storage_cost": 0.0,
+        "new_hub_transfer_cost": 173400.0,
+        "assignment_transport_cost": 2723228.9255,
+        "overflow_units": 0.0
+      },
+      "audit": {
+        "c1_assignment_violations": 0,
+        "c1_missing_assignments": 0,
+        "c1_multiple_assignments": 0,
+        "c1_invalid_hub_assignments": 0,
+        "c1_extra_assignments": 0,
+        "c2_assignment_without_stock": 0,
+        "c3_stock_without_open_hub": 0,
+        "c4_hubs_over_L": 0,
+        "c4_total_overflow_units": 0,
+        "max_service_distance_violations": 0,
+        "sla_distance_violations": 5037,
+        "total_structural_violations": 0
+      }
+    },
+    "postprocess": {
+      "repair_assignments": true,
+      "trim_unused_open_stock": true,
+      "missing_unrepaired": 0,
+      "hub_prune_enabled": true,
+      "hub_prune_closures": 3,
+      "hub_prune_relocations": 808
+    },
+    "va": {
+      "engine": "NEC Vector Annealing",
+      "manual_reference": "NEC Vector Annealing PoC Manual, 2nd Edition (Nov 2022)",
+      "execution_mode": "local_ve_card",
+      "service_client_used": false,
+      "module_file": "/opt/va/V3.0.0/libexec/VectorAnnealing/python/VectorAnnealing/__init__.py",
+      "hostname": "sfpga01n",
+      "ve_node_number": null,
+      "ve_devices_visible": [
+        "/dev/ve0",
+        "/dev/veslot0"
+      ],
+      "ve_card_count": 1,
+      "python_version": "3.13.13 | packaged by conda-forge | (main, Apr  8 2026, 02:00:33) [GCC 14.3.0]",
+      "ve_device": {
+        "hbm_capacity_bytes": null,
+        "hbm_capacity_source": "unknown",
+        "observed_peak_device_bytes": null,
+        "observed_device_memory_raw": null,
+        "observed_device_memory_source": "",
+        "observed_device_memory_mb_if_mb": null,
+        "device_peak_source": "none_available",
+        "device_peak_is_measured": false,
+        "predicted_dense_bytes": 8954836900,
+        "observed_minus_predicted_bytes": null,
+        "ve_devices_visible": [
+          "/dev/ve0",
+          "/dev/veslot0"
+        ],
+        "ve_card_count": 1,
+        "note": "No runtime device readout available on this install: device memory is PREDICTED (dense_matrix_bytes), never measured. Capacity and prediction are recorded; observed_peak_device_bytes is null by design. Run `va_probe.py --device-memory` on the VE node to inventory what exists. HBM capacity is also unreadable here; pass --ve-hbm-gb to record it explicitly."
+      },
+      "objective_scale_enabled": false,
+      "min_penalty": 50000.0,
+      "seeded": true,
+      "seed": 42,
+      "precision": "VA default",
+      "vector_mode": "ACCURACY",
+      "num_reads_base": 100,
+      "fixed_num_reads": false,
+      "num_sweeps": 3000,
+      "repeats": 1,
+      "adaptive_penalty_mode": "within-batch",
+      "batches_reaching_feasibility": 1,
+      "adaptive_exit_reasons": {
+        "1": "feasible"
+      }
+    },
+    "precision_audit": {
+      "reads_audited": 265,
+      "reads_with_finite_rel_diff": 265,
+      "max_abs_rel_diff": 0.0,
+      "median_abs_rel_diff": 0.0,
+      "max_abs_diff": 0.0,
+      "median_abs_diff": 0.0
+    },
+    "performance": {
+      "hubs": 100,
+      "zips": 2000,
+      "parts": 150,
+      "active_demand_rows": 28192,
+      "batches": 1,
+      "num_z": 35050,
+      "num_y": 12165,
+      "num_x": 100,
+      "binary_variables": 47315,
+      "max_batch_binary_variables": 47315,
+      "qubo_interactions": 102732,
+      "matrix_density": 7.064293934823089e-05,
+      "avg_couplings_per_var": 2.342470675261545,
+      "max_dense_matrix_bytes": 8954836900,
+      "qubo_construction_seconds": 2.9383275508880615,
+      "annealing_seconds": 32629.437865791842,
+      "evaluation_seconds": 77.83702301979065,
+      "total_wall_seconds": 32718.536504887044,
+      "peak_memory_mb": 3663.6640625,
+      "rss_peak_mb": 3663.6640625,
+      "cgroup_peak_mb": 68832.70703125,
+      "raw_cost": 55353650.7855,
+      "raw_structural_violations": 0,
+      "raw_c1_violations": 0,
+      "raw_c2_violations": 0,
+      "raw_c3_violations": 0,
+      "raw_c4_hubs_over_L": 0,
+      "batch_c1_violations": 0,
+      "batch_c2_violations": 0,
+      "batch_c3_violations": 0,
+      "batches_feasible_from_sampler": 1,
+      "structurally_feasible_reads": 265,
+      "total_reads": 265
+    }
+  }
+}

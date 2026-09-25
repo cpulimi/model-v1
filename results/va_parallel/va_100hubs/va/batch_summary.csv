@@ -1,0 +1,2 @@
+batch_id,num_rows,num_parts,num_z,num_y,num_x,interactions,build_seconds,sample_seconds,eval_seconds,total_seconds,stage_used,suggested_reads,energy,reconstructed_cost,c1_violations,c2_violations,c3_violations,c4_violations,penalty_c1,penalty_c2,penalty_c3,open_hubs_count,stocked_pairs_count,assignments_count
+1,28192,150,35050,12165,100,102732,2.9383275508880615,32629.437865791842,77.83702301979065,32713.42951989174,0,265,-1354246349.2145,55353650.7855,0,0,0,0,50000.0,50000.0,50000.0,100,11673,28192

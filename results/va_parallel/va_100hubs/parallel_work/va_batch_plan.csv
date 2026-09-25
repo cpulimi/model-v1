@@ -1,0 +1,2 @@
+batch_id,num_parts,num_rows,num_z,num_y,num_x,total_vars,qubo_vars_in_Q,interactions,qubo_offset,dense_matrix_bytes,matrix_density,nonzero_cells,avg_couplings_per_var,sparse_equivalent_bytes,dense_waste_factor,penalty_c1,penalty_c2,penalty_c3,c4_note,build_seconds,pyqubo_express_seconds,pyqubo_compile_seconds,note
+1,150,28192,35050,12165,100,47315,47315,102732,1409600000.0,8954836900,7.064293934823089e-05,158149,2.342470675261545,1232784,7263.913954107126,50000.0,50000.0,50000.0,inactive_or_soft_cost_only,0.8392296396195889,0.41686624847352505,0.2517021894454956,
