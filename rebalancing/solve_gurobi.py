@@ -37,6 +37,7 @@ if __package__ in (None, ""):
 from rebalancing.data import (  # noqa: E402
     Instance,
     generate_synthetic,
+    load_instance,
     purchase_keys,
     ship_arcs,
     write_instance_csv,
@@ -413,7 +414,7 @@ def main(argv=None) -> int:
         "num_constraints": res["counts"]["constraints"],
         "num_nonzeros": res["counts"]["nonzeros"],
         "timing_seconds": {
-            "data_generation": data_s,
+            "data_load" if args.instance else "data_generation": data_s,
             "model_build": res["build_seconds"],
             "solve": res["solve_seconds"],
             "gurobi_runtime": res["Runtime"],
@@ -444,6 +445,7 @@ def main(argv=None) -> int:
         summary["solution_stats"] = {
             "units_shipped": sum(sol["X"].values()),
             "units_bought": sum(sol["T"].values()),
+            "units_bought_free": sum(v for t, v in sol["T"].items() if inst.B[t] == 0),
             "units_unmet": sum(sol["U"].values()),
             "total_need": sum(inst.N.values()),
             "total_excess": sum(inst.E.values()),
