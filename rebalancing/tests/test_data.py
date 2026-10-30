@@ -103,6 +103,60 @@ def test_csv_round_trip(tmp_path):
         assert (back.UD, back.FC1, back.FC2) == (inst.UD, inst.FC1, inst.FC2)
 
 
-def test_load_instance_is_a_stub():
-    with pytest.raises(NotImplementedError):
-        load_instance("anything")
+def write_old_workbook(path, E, N, B, C):
+    """Workbook in the old Java exporter's layout: header row, every cell TEXT."""
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    sheets = {
+        "PARA_Eik": (("PART k", "SITE i", "EXCESS UNITS"), [(k, i, v) for (i, k), v in E.items()]),
+        "PARA_Njk": (("PART k", "SITE j", "NEEDED UNITS"), [(k, j, v) for (j, k), v in N.items()]),
+        "PARA_Bmjk": (("PART k", "SITE m", "SITE j", "COST m to j"), [(k, m, j, v) for (m, j, k), v in B.items()]),
+        "PARA_Cijk": (("PART k", "SITE i", "SITE j", "COST i to j"), [(k, i, j, v) for (i, j, k), v in C.items()]),
+    }
+    for name, (header, rows) in sheets.items():
+        ws = wb.create_sheet(name)
+        ws.append(header)
+        for row in rows:
+            ws.append([str(c) for c in row])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    return path
+
+
+def tiny_old_workbook(tmp_path):
+    # 3 hubs, 1 part, 2 suppliers. Hub 1 has excess; hubs 2, 3 need.
+    # B[m,j] = 0 when m == j, as the Java generator does; C diagonal is 0.
+    hubs, sups = ["1", "2", "3"], ["1", "2"]
+    E = {("1", "1"): 30, ("2", "1"): 0, ("3", "1"): 0}
+    N = {("1", "1"): 0, ("2", "1"): 20, ("3", "1"): 25}
+    B = {(m, j, "1"): (0 if m == j else 100 + int(m) * 10 + int(j)) for m in sups for j in hubs}
+    C = {(i, j, "1"): (0 if i == j else 50 + int(i) + int(j)) for i in hubs for j in hubs}
+    return write_old_workbook(tmp_path / "testcity_3_hubs" / "777.xlsx", E, N, B, C)
+
+
+def test_load_old_workbook(tmp_path):
+    path = tiny_old_workbook(tmp_path)
+    with pytest.warns(UserWarning, match="purchase costs on needed"):
+        inst = load_instance(path, ud=5000.0, fc1=10.0, fc2=20.0)
+    assert inst.name == "testcity_777"
+    assert inst.sites == ["1", "2", "3"] and inst.suppliers == ["1", "2"] and inst.parts == ["1"]
+    assert inst.E == {("1", "1"): 30}                       # zero rows dropped
+    assert inst.N == {("2", "1"): 20, ("3", "1"): 25}
+    assert inst.ship_cost_by_part and len(inst.C) == 6       # (i,j,k) keys, no diagonal
+    assert all(i != j for i, j, _ in inst.C) and inst.C["1", "2", "1"] == 53
+    assert all(isinstance(v, int) for d in (inst.E, inst.N, inst.B, inst.C) for v in d.values())
+    assert inst.B["2", "2", "1"] == 0 and inst.B["1", "2", "1"] == 112
+    assert (inst.UD, inst.FC1, inst.FC2) == (5000.0, 10.0, 20.0)
+    assert inst.meta["C_diagonal_rows_dropped"] == 3 and inst.meta["B_zero_entries"] == 2
+    assert (inst.meta["city"], inst.meta["hubs_label"], inst.meta["seed"]) == ("testcity", 3, 777)
+
+
+def test_load_old_workbook_rejects_non_integer_text(tmp_path):
+    path = write_old_workbook(
+        tmp_path / "x_2_hubs" / "1.xlsx",
+        E={("1", "1"): "12.5"}, N={("2", "1"): 5},
+        B={("1", "2", "1"): 80}, C={("1", "2", "1"): 60},
+    )
+    with pytest.raises(ValueError, match="not integer text"):
+        load_instance(path)
