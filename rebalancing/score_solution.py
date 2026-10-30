@@ -44,7 +44,7 @@ def read_solution(run_dir: Path) -> dict:
     return sol
 
 
-def score(inst: Instance, sol: dict, strong_linking: bool = False) -> dict:
+def score(inst: Instance, sol: dict, strong_linking: bool = False, free_purchase: str = "keep") -> dict:
     """Recompute the objective and list every violated constraint."""
     X, T, U, Y, Z = (sol[n] for n in ("X", "T", "U", "Y", "Z"))
     E, N = inst.E, inst.N
@@ -64,6 +64,8 @@ def score(inst: Instance, sol: dict, strong_linking: bool = False) -> dict:
     for (m, j, k), v in T.items():
         if N.get((j, k), 0) <= 0 or m not in inst.suppliers:
             viol.append(f"sparsity: T[{m},{j},{k}] = {v} has no need or unknown supplier")
+        elif free_purchase == "block" and inst.B.get((m, j, k)) == 0:
+            viol.append(f"free-purchase block: T[{m},{j},{k}] = {v} uses a zero-cost purchase")
     for (j, k), v in U.items():
         if N.get((j, k), 0) <= 0:
             viol.append(f"sparsity: U[{j},{k}] = {v} has no need")
@@ -141,8 +143,9 @@ def main(argv=None) -> int:
     inst = read_instance_csv(args.instance_dir or run_dir / "instance")
     summary = json.loads((run_dir / "summary.json").read_text())
     strong = summary.get("params", {}).get("strong_linking", False)
+    free_purchase = summary.get("params", {}).get("free_purchase", "keep")
     sol = read_solution(run_dir)
-    res = score(inst, sol, strong_linking=strong)
+    res = score(inst, sol, strong_linking=strong, free_purchase=free_purchase)
 
     obj = res["objective"]["total"]
     ref = summary.get("ObjVal")
