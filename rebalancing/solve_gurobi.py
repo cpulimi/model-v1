@@ -200,14 +200,14 @@ def build_model(inst: Instance, strong_linking: bool = False, env=None):
     return model, vars_, counts
 
 
-def extract_solution(inst: Instance, vars_: dict) -> tuple:
+def extract_solution(model, vars_: dict) -> tuple:
     """Nonzero, integer-rounded solution plus the max deviation from integrality seen."""
     sol, max_frac = {}, 0.0
     for name, v in vars_.items():
         if len(v) == 0:
             sol[name] = {}
             continue
-        vals = v.getAttr("X") if hasattr(v, "getAttr") else {key: var.X for key, var in v.items()}
+        vals = model.getAttr("X", v)
         out = {}
         for key, x in vals.items():
             r = round(x)
@@ -268,12 +268,16 @@ def solve(
 
     status = STATUS_NAMES.get(model.Status, str(model.Status))
     has_sol = model.SolCount > 0
+    try:
+        obj_bound = model.ObjBound
+    except gp.GurobiError:
+        obj_bound = None
     res = {
         "status": status,
         "status_code": model.Status,
         "SolCount": model.SolCount,
         "ObjVal": model.ObjVal if has_sol else None,
-        "ObjBound": model.ObjBound if model.Status != GRB.INFEASIBLE else None,
+        "ObjBound": obj_bound,
         "MIPGap": model.MIPGap if has_sol else None,
         "Runtime": model.Runtime,
         "NodeCount": model.NodeCount,
@@ -283,7 +287,7 @@ def solve(
         "vm_hwm_mb_after_build": hwm_after_build,
     }
     if has_sol:
-        sol, max_frac = extract_solution(inst, vars_)
+        sol, max_frac = extract_solution(model, vars_)
         res["solution"] = sol
         res["max_integrality_deviation"] = max_frac
         res["cost_breakdown"] = cost_breakdown(inst, sol)
