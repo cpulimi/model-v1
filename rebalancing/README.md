@@ -98,6 +98,8 @@ python -m rebalancing.run_old_datasets            # all 50 x {keep, block}
 - **Run names:** runs are named `<city>_<seed>`, plus `_blockfree` with `--free-purchase block`.
 - **Free purchases:** the Java generator sets `B[m,j] = 0` whenever m == j, so hubs 1–3 can buy from suppliers 1–3 for free. `validate_instance` warns about this. `--free-purchase block` removes the T variables whose B is 0, which gives the same optimum as the reference's "price at 175", because a 175 option is never the cheapest.
 - **Results:** all 100 runs match the reference `highs_obj` exactly and pass `score_solution`. See `results/old_datasets_summary.csv`.
+  99 of 100 also have the same flow totals (shipped / bought / unmet) as the reference. The exception is `london_3003_blockfree`: it ships 1874 and buys 35 where the reference ships 1868 and buys 41, at the same objective 137875. That is an alternative optimum, not an error.
+- **Run directories** for every row are under `results/rebalancing/old_datasets/` (repo root). The CPLEX `.mps` copies for the `--mps-seeds` models are in `results/rebalancing/old_datasets/mps/`.
 
 ## Interpretation choices (check these)
 

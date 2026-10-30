@@ -1,0 +1,58 @@
+{
+  "name": "vienna_2002",
+  "sites": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20"
+  ],
+  "parts": [
+    "1"
+  ],
+  "suppliers": [
+    "1",
+    "2",
+    "3"
+  ],
+  "UD": 10000.0,
+  "FC1": 100.0,
+  "FC2": 1000.0,
+  "ship_cost_by_part": true,
+  "meta": {
+    "source": "load_instance",
+    "path": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/vienna_20_hubs/2002.xlsx",
+    "city": "vienna",
+    "hubs_label": 20,
+    "seed": 2002,
+    "n_sites": 20,
+    "n_parts": 1,
+    "n_suppliers": 3,
+    "rows": {
+      "PARA_Eik": 20,
+      "PARA_Njk": 20,
+      "PARA_Bmjk": 60,
+      "PARA_Cijk": 400
+    },
+    "zero_E_rows_dropped": 6,
+    "zero_N_rows_dropped": 14,
+    "C_diagonal_rows_dropped": 20,
+    "C_diagonal_nonzero": 0,
+    "B_zero_entries": 3
+  }
+}

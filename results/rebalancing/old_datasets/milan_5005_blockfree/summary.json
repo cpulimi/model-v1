@@ -1,0 +1,117 @@
+{
+  "status": "OPTIMAL",
+  "status_code": 2,
+  "SolCount": 10,
+  "ObjVal": 454506.0,
+  "ObjBound": 454506.0,
+  "MIPGap": 0.0,
+  "Runtime": 0.29570794105529785,
+  "NodeCount": 1.0,
+  "num_vars": {
+    "X": 9804,
+    "T": 256,
+    "U": 86,
+    "Y": 114,
+    "Z": 86,
+    "total": 10346,
+    "integer_nonbinary": 10146,
+    "binary": 200,
+    "T_free_blocked": 2
+  },
+  "num_constraints": {
+    "c2_excess": 114,
+    "c3_need": 86,
+    "c4_ship_link": 114,
+    "c5_recv_link": 86,
+    "total": 400
+  },
+  "num_nonzeros": 40014,
+  "timing_seconds": {
+    "data_load": 0.8173969160125125,
+    "model_build": 0.04652712499955669,
+    "solve": 0.29573241699836217,
+    "gurobi_runtime": 0.29570794105529785,
+    "wall_total": 1.1989384580228943
+  },
+  "memory": {
+    "peak_memory_mb": null,
+    "peak_memory_source": "unavailable_not_linux",
+    "vm_hwm_mb_after_build": null,
+    "ru_maxrss_mb_fallback": 188.21875
+  },
+  "solution_stats": {
+    "units_shipped": 7067,
+    "units_bought": 0,
+    "units_bought_free": 0,
+    "units_unmet": 0,
+    "total_need": 7067,
+    "total_excess": 9303,
+    "sites_shipping": 82,
+    "sites_receiving": 86,
+    "ship_arcs_used": 157
+  },
+  "cost_breakdown": {
+    "ship": 360306,
+    "purchase": 0,
+    "unmet": 0.0,
+    "fixed_ship_FC1": 8200.0,
+    "fixed_receive_FC2": 86000.0,
+    "total": 454506.0
+  },
+  "max_integrality_deviation": 0.0,
+  "gurobi_version": "13.0.3",
+  "git": {
+    "commit": "993da38f685885068378550783b816b76899deaa",
+    "branch": "rebalancing-gurobi",
+    "rebalancing_dirty": true
+  },
+  "params": {
+    "instance": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/milan_200_hubs/5005.xlsx",
+    "sites": null,
+    "parts": null,
+    "suppliers": null,
+    "seed": 0,
+    "free_purchase": "block",
+    "fc1": 100.0,
+    "fc2": 1000.0,
+    "ud": 10000.0,
+    "ship_cost_by_part": false,
+    "time_limit": null,
+    "mip_gap": 0.0,
+    "threads": null,
+    "strong_linking": false,
+    "out_dir": "results/rebalancing/old_datasets",
+    "run_name": "milan_5005_blockfree",
+    "write_mps": false,
+    "quiet": true,
+    "MIPGap": 0.0,
+    "linking": "aggregated_per_site_tight_M"
+  },
+  "instance": {
+    "name": "milan_5005",
+    "source": "load_instance",
+    "path": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/milan_200_hubs/5005.xlsx",
+    "city": "milan",
+    "hubs_label": 200,
+    "seed": 5005,
+    "n_sites": 200,
+    "n_parts": 1,
+    "n_suppliers": 3,
+    "rows": {
+      "PARA_Eik": 200,
+      "PARA_Njk": 200,
+      "PARA_Bmjk": 600,
+      "PARA_Cijk": 40000
+    },
+    "zero_E_rows_dropped": 86,
+    "zero_N_rows_dropped": 114,
+    "C_diagonal_rows_dropped": 200,
+    "C_diagonal_nonzero": 0,
+    "B_zero_entries": 3,
+    "UD": 10000.0,
+    "FC1": 100.0,
+    "FC2": 1000.0
+  },
+  "python": "3.13.5",
+  "platform": "darwin"
+}

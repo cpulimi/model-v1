@@ -1,0 +1,48 @@
+{
+  "name": "berlin_1002",
+  "sites": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10"
+  ],
+  "parts": [
+    "1"
+  ],
+  "suppliers": [
+    "1",
+    "2",
+    "3"
+  ],
+  "UD": 10000.0,
+  "FC1": 100.0,
+  "FC2": 1000.0,
+  "ship_cost_by_part": true,
+  "meta": {
+    "source": "load_instance",
+    "path": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/berlin_10_hubs/1002.xlsx",
+    "city": "berlin",
+    "hubs_label": 10,
+    "seed": 1002,
+    "n_sites": 10,
+    "n_parts": 1,
+    "n_suppliers": 3,
+    "rows": {
+      "PARA_Eik": 10,
+      "PARA_Njk": 10,
+      "PARA_Bmjk": 30,
+      "PARA_Cijk": 100
+    },
+    "zero_E_rows_dropped": 4,
+    "zero_N_rows_dropped": 6,
+    "C_diagonal_rows_dropped": 10,
+    "C_diagonal_nonzero": 0,
+    "B_zero_entries": 3
+  }
+}

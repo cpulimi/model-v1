@@ -1,0 +1,104 @@
+{
+  "status": "OPTIMAL",
+  "status_code": 2,
+  "SolCount": 2,
+  "ObjVal": 24552.0,
+  "ObjBound": 24552.0,
+  "MIPGap": 0.0,
+  "Runtime": 0.00039505958557128906,
+  "NodeCount": 0.0,
+  "num_vars": {
+    "X": 6,
+    "T": 15,
+    "U": 3,
+    "Y": 2,
+    "Z": 3,
+    "total": 29,
+    "integer_nonbinary": 24,
+    "binary": 5
+  },
+  "num_constraints": {
+    "c2_excess": 2,
+    "c3_need": 3,
+    "c4_ship_link": 2,
+    "c5_recv_link": 3,
+    "total": 10
+  },
+  "num_nonzeros": 62,
+  "timing_seconds": {
+    "data_generation": 0.017232250014785677,
+    "model_build": 0.0014897910004947335,
+    "solve": 0.00042299999040551484,
+    "gurobi_runtime": 0.00039505958557128906,
+    "wall_total": 0.026140249974559993
+  },
+  "memory": {
+    "peak_memory_mb": null,
+    "peak_memory_source": "unavailable_not_linux",
+    "vm_hwm_mb_after_build": null,
+    "ru_maxrss_mb_fallback": 49.59375
+  },
+  "solution_stats": {
+    "units_shipped": 103,
+    "units_bought": 190,
+    "units_unmet": 0,
+    "total_need": 293,
+    "total_excess": 218,
+    "sites_shipping": 1,
+    "sites_receiving": 3,
+    "ship_arcs_used": 2
+  },
+  "cost_breakdown": {
+    "ship": 6386,
+    "purchase": 15066,
+    "unmet": 0.0,
+    "fixed_ship_FC1": 100.0,
+    "fixed_receive_FC2": 3000.0,
+    "total": 24552.0
+  },
+  "max_integrality_deviation": 0.0,
+  "gurobi_version": "13.0.3",
+  "git": {
+    "commit": "fab0f2c648a268aa00229973e43c9a9d6be001d9",
+    "branch": "rebalancing-gurobi",
+    "rebalancing_dirty": false
+  },
+  "params": {
+    "sites": 5,
+    "parts": 1,
+    "suppliers": 5,
+    "seed": 1,
+    "fc1": 100.0,
+    "fc2": 1000.0,
+    "ud": 10000.0,
+    "ship_cost_by_part": false,
+    "time_limit": null,
+    "mip_gap": 0.0001,
+    "threads": null,
+    "strong_linking": false,
+    "out_dir": "results/rebalancing/small",
+    "run_name": "syn_s5_p1_m5_seed1",
+    "write_mps": true,
+    "quiet": true,
+    "MIPGap": 0.0001,
+    "linking": "aggregated_per_site_tight_M"
+  },
+  "instance": {
+    "name": "syn_s5_p1_m5_seed1",
+    "source": "generate_synthetic",
+    "n_sites": 5,
+    "n_parts": 1,
+    "n_suppliers": 5,
+    "seed": 1,
+    "ship_cost_by_part": false,
+    "excess_rule": "per part, n_sites//2 random sites ~ DU(20,120), others 0",
+    "need_rule": "DU(50,150) where E[j,k] == 0, else 0",
+    "ship_cost_dist": "DU(50,150)",
+    "purchase_cost_dist": "DU(75,175)",
+    "UD": 10000.0,
+    "FC1": 100.0,
+    "FC2": 1000.0
+  },
+  "python": "3.13.5",
+  "platform": "darwin"
+}

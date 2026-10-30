@@ -1,0 +1,117 @@
+{
+  "status": "OPTIMAL",
+  "status_code": 2,
+  "SolCount": 5,
+  "ObjVal": 36326.0,
+  "ObjBound": 36326.0,
+  "MIPGap": 0.0,
+  "Runtime": 0.002846956253051758,
+  "NodeCount": 1.0,
+  "num_vars": {
+    "X": 84,
+    "T": 17,
+    "U": 6,
+    "Y": 14,
+    "Z": 6,
+    "total": 127,
+    "integer_nonbinary": 107,
+    "binary": 20,
+    "T_free_blocked": 1
+  },
+  "num_constraints": {
+    "c2_excess": 14,
+    "c3_need": 6,
+    "c4_ship_link": 14,
+    "c5_recv_link": 6,
+    "total": 40
+  },
+  "num_nonzeros": 396,
+  "timing_seconds": {
+    "data_load": 0.017982708988711238,
+    "model_build": 0.0016055000014603138,
+    "solve": 0.0028592080052476376,
+    "gurobi_runtime": 0.002846956253051758,
+    "wall_total": 0.02557545801391825
+  },
+  "memory": {
+    "peak_memory_mb": null,
+    "peak_memory_source": "unavailable_not_linux",
+    "vm_hwm_mb_after_build": null,
+    "ru_maxrss_mb_fallback": 76.359375
+  },
+  "solution_stats": {
+    "units_shipped": 496,
+    "units_bought": 0,
+    "units_bought_free": 0,
+    "units_unmet": 0,
+    "total_need": 496,
+    "total_excess": 1423,
+    "sites_shipping": 6,
+    "sites_receiving": 6,
+    "ship_arcs_used": 10
+  },
+  "cost_breakdown": {
+    "ship": 29726,
+    "purchase": 0,
+    "unmet": 0.0,
+    "fixed_ship_FC1": 600.0,
+    "fixed_receive_FC2": 6000.0,
+    "total": 36326.0
+  },
+  "max_integrality_deviation": 0.0,
+  "gurobi_version": "13.0.3",
+  "git": {
+    "commit": "993da38f685885068378550783b816b76899deaa",
+    "branch": "rebalancing-gurobi",
+    "rebalancing_dirty": true
+  },
+  "params": {
+    "instance": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/vienna_20_hubs/2002.xlsx",
+    "sites": null,
+    "parts": null,
+    "suppliers": null,
+    "seed": 0,
+    "free_purchase": "block",
+    "fc1": 100.0,
+    "fc2": 1000.0,
+    "ud": 10000.0,
+    "ship_cost_by_part": false,
+    "time_limit": null,
+    "mip_gap": 0.0,
+    "threads": null,
+    "strong_linking": false,
+    "out_dir": "results/rebalancing/old_datasets",
+    "run_name": "vienna_2002_blockfree",
+    "write_mps": false,
+    "quiet": true,
+    "MIPGap": 0.0,
+    "linking": "aggregated_per_site_tight_M"
+  },
+  "instance": {
+    "name": "vienna_2002",
+    "source": "load_instance",
+    "path": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/vienna_20_hubs/2002.xlsx",
+    "city": "vienna",
+    "hubs_label": 20,
+    "seed": 2002,
+    "n_sites": 20,
+    "n_parts": 1,
+    "n_suppliers": 3,
+    "rows": {
+      "PARA_Eik": 20,
+      "PARA_Njk": 20,
+      "PARA_Bmjk": 60,
+      "PARA_Cijk": 400
+    },
+    "zero_E_rows_dropped": 6,
+    "zero_N_rows_dropped": 14,
+    "C_diagonal_rows_dropped": 20,
+    "C_diagonal_nonzero": 0,
+    "B_zero_entries": 3,
+    "UD": 10000.0,
+    "FC1": 100.0,
+    "FC2": 1000.0
+  },
+  "python": "3.13.5",
+  "platform": "darwin"
+}

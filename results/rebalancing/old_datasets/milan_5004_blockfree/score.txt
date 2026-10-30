@@ -1,0 +1,11 @@
+run: results/rebalancing/old_datasets/milan_5004_blockfree
+  ship                   426,335.0000
+  purchase                     0.0000
+  unmet                        0.0000
+  fixed_ship_FC1           9,500.0000
+  fixed_receive_FC2      104,000.0000
+  total                  539,835.0000
+  Gurobi ObjVal          539,835.0000
+  relative diff      0.0   (rtol 1e-06)  -> MATCH
+  constraints (2)-(5): all satisfied
+PASS

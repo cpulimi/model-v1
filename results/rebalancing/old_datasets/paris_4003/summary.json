@@ -1,0 +1,117 @@
+{
+  "status": "OPTIMAL",
+  "status_code": 2,
+  "SolCount": 10,
+  "ObjVal": 246139.0,
+  "ObjBound": 246139.0,
+  "MIPGap": 0.0,
+  "Runtime": 0.10314393043518066,
+  "NodeCount": 5.0,
+  "num_vars": {
+    "X": 2451,
+    "T": 129,
+    "U": 43,
+    "Y": 57,
+    "Z": 43,
+    "total": 2723,
+    "integer_nonbinary": 2623,
+    "binary": 100,
+    "T_free_blocked": 0
+  },
+  "num_constraints": {
+    "c2_excess": 57,
+    "c3_need": 43,
+    "c4_ship_link": 57,
+    "c5_recv_link": 43,
+    "total": 200
+  },
+  "num_nonzeros": 10205,
+  "timing_seconds": {
+    "data_load": 0.21938370901625603,
+    "model_build": 0.01251408300595358,
+    "solve": 0.1031619590066839,
+    "gurobi_runtime": 0.10314393043518066,
+    "wall_total": 0.345567000011215
+  },
+  "memory": {
+    "peak_memory_mb": null,
+    "peak_memory_source": "unavailable_not_linux",
+    "vm_hwm_mb_after_build": null,
+    "ru_maxrss_mb_fallback": 96.0625
+  },
+  "solution_stats": {
+    "units_shipped": 3779,
+    "units_bought": 122,
+    "units_bought_free": 122,
+    "units_unmet": 0,
+    "total_need": 3901,
+    "total_excess": 4859,
+    "sites_shipping": 44,
+    "sites_receiving": 43,
+    "ship_arcs_used": 75
+  },
+  "cost_breakdown": {
+    "ship": 198739,
+    "purchase": 0,
+    "unmet": 0.0,
+    "fixed_ship_FC1": 4400.0,
+    "fixed_receive_FC2": 43000.0,
+    "total": 246139.0
+  },
+  "max_integrality_deviation": 0.0,
+  "gurobi_version": "13.0.3",
+  "git": {
+    "commit": "993da38f685885068378550783b816b76899deaa",
+    "branch": "rebalancing-gurobi",
+    "rebalancing_dirty": true
+  },
+  "params": {
+    "instance": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/paris_100_hubs/4003.xlsx",
+    "sites": null,
+    "parts": null,
+    "suppliers": null,
+    "seed": 0,
+    "free_purchase": "keep",
+    "fc1": 100.0,
+    "fc2": 1000.0,
+    "ud": 10000.0,
+    "ship_cost_by_part": false,
+    "time_limit": null,
+    "mip_gap": 0.0,
+    "threads": null,
+    "strong_linking": false,
+    "out_dir": "results/rebalancing/old_datasets",
+    "run_name": "paris_4003",
+    "write_mps": false,
+    "quiet": true,
+    "MIPGap": 0.0,
+    "linking": "aggregated_per_site_tight_M"
+  },
+  "instance": {
+    "name": "paris_4003",
+    "source": "load_instance",
+    "path": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/paris_100_hubs/4003.xlsx",
+    "city": "paris",
+    "hubs_label": 100,
+    "seed": 4003,
+    "n_sites": 100,
+    "n_parts": 1,
+    "n_suppliers": 3,
+    "rows": {
+      "PARA_Eik": 100,
+      "PARA_Njk": 100,
+      "PARA_Bmjk": 300,
+      "PARA_Cijk": 10000
+    },
+    "zero_E_rows_dropped": 43,
+    "zero_N_rows_dropped": 57,
+    "C_diagonal_rows_dropped": 100,
+    "C_diagonal_nonzero": 0,
+    "B_zero_entries": 3,
+    "UD": 10000.0,
+    "FC1": 100.0,
+    "FC2": 1000.0
+  },
+  "python": "3.13.5",
+  "platform": "darwin"
+}

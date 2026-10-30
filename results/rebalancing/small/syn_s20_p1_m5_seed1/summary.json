@@ -1,0 +1,104 @@
+{
+  "status": "OPTIMAL",
+  "status_code": 2,
+  "SolCount": 4,
+  "ObjVal": 64246.0,
+  "ObjBound": 64241.0,
+  "MIPGap": 7.782585686268406e-05,
+  "Runtime": 0.006118059158325195,
+  "NodeCount": 1.0,
+  "num_vars": {
+    "X": 100,
+    "T": 50,
+    "U": 10,
+    "Y": 10,
+    "Z": 10,
+    "total": 180,
+    "integer_nonbinary": 160,
+    "binary": 20
+  },
+  "num_constraints": {
+    "c2_excess": 10,
+    "c3_need": 10,
+    "c4_ship_link": 10,
+    "c5_recv_link": 10,
+    "total": 40
+  },
+  "num_nonzeros": 530,
+  "timing_seconds": {
+    "data_generation": 0.014181584003381431,
+    "model_build": 0.0024244590022135526,
+    "solve": 0.006142250000266358,
+    "gurobi_runtime": 0.006118059158325195,
+    "wall_total": 0.029246125021018088
+  },
+  "memory": {
+    "peak_memory_mb": null,
+    "peak_memory_source": "unavailable_not_linux",
+    "vm_hwm_mb_after_build": null,
+    "ru_maxrss_mb_fallback": 54.0625
+  },
+  "solution_stats": {
+    "units_shipped": 651,
+    "units_bought": 166,
+    "units_unmet": 0,
+    "total_need": 817,
+    "total_excess": 658,
+    "sites_shipping": 10,
+    "sites_receiving": 10,
+    "ship_arcs_used": 16
+  },
+  "cost_breakdown": {
+    "ship": 40300,
+    "purchase": 12946,
+    "unmet": 0.0,
+    "fixed_ship_FC1": 1000.0,
+    "fixed_receive_FC2": 10000.0,
+    "total": 64246.0
+  },
+  "max_integrality_deviation": 0.0,
+  "gurobi_version": "13.0.3",
+  "git": {
+    "commit": "fab0f2c648a268aa00229973e43c9a9d6be001d9",
+    "branch": "rebalancing-gurobi",
+    "rebalancing_dirty": false
+  },
+  "params": {
+    "sites": 20,
+    "parts": 1,
+    "suppliers": 5,
+    "seed": 1,
+    "fc1": 100.0,
+    "fc2": 1000.0,
+    "ud": 10000.0,
+    "ship_cost_by_part": false,
+    "time_limit": null,
+    "mip_gap": 0.0001,
+    "threads": null,
+    "strong_linking": false,
+    "out_dir": "results/rebalancing/small",
+    "run_name": "syn_s20_p1_m5_seed1",
+    "write_mps": true,
+    "quiet": true,
+    "MIPGap": 0.0001,
+    "linking": "aggregated_per_site_tight_M"
+  },
+  "instance": {
+    "name": "syn_s20_p1_m5_seed1",
+    "source": "generate_synthetic",
+    "n_sites": 20,
+    "n_parts": 1,
+    "n_suppliers": 5,
+    "seed": 1,
+    "ship_cost_by_part": false,
+    "excess_rule": "per part, n_sites//2 random sites ~ DU(20,120), others 0",
+    "need_rule": "DU(50,150) where E[j,k] == 0, else 0",
+    "ship_cost_dist": "DU(50,150)",
+    "purchase_cost_dist": "DU(75,175)",
+    "UD": 10000.0,
+    "FC1": 100.0,
+    "FC2": 1000.0
+  },
+  "python": "3.13.5",
+  "platform": "darwin"
+}
