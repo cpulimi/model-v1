@@ -302,7 +302,10 @@ def load_instance(path, ud: float = 10000.0, fc1: float = 100.0, fc2: float = 10
     import openpyxl  # only needed for this loader
 
     path = Path(path)
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    with warnings.catch_warnings():
+        # The Java exporter writes no default style; harmless.
+        warnings.filterwarnings("ignore", message="Workbook contains no default style")
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
         missing = [s for s in OLD_SHEETS if s not in wb.sheetnames]
         if missing:
