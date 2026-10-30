@@ -91,12 +91,13 @@ def git_info() -> dict:
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
-def build_model(inst: Instance, strong_linking: bool = False, env=None):
+def build_model(inst: Instance, strong_linking: bool = False, env=None, free_purchase: str = "keep"):
     """Build the sparse model. Returns (model, vars, counts).
 
     Variables exist only where they can be nonzero:
         X  on ship_arcs(inst)          (E > 0, N > 0, i != j)
-        T  on purchase_keys(inst)      (N > 0, every supplier)
+        T  on purchase_keys(inst)      (N > 0, every supplier; with
+                                        free_purchase="block", minus keys whose B is 0)
         U  on N's keys                 (N > 0)
         Y  for sites with >= 1 outgoing arc
         Z  for sites with >= 1 incoming arc or purchase key
@@ -104,8 +105,15 @@ def build_model(inst: Instance, strong_linking: bool = False, env=None):
     Objective coefficients go in through addVars(obj=...), so no giant objective
     expression is ever built.
     """
+    if free_purchase not in ("keep", "block"):
+        raise ValueError(f"free_purchase must be 'keep' or 'block', got {free_purchase!r}")
     x_keys = ship_arcs(inst)
     t_keys = purchase_keys(inst)
+    n_blocked = 0
+    if free_purchase == "block":
+        kept = [t for t in t_keys if inst.B[t] != 0]
+        n_blocked = len(t_keys) - len(kept)
+        t_keys = kept
     u_keys = list(inst.N)
 
     # Index lists, one pass over each key set.
@@ -195,6 +203,7 @@ def build_model(inst: Instance, strong_linking: bool = False, env=None):
     counts["vars"]["total"] = model.NumVars
     counts["vars"]["integer_nonbinary"] = len(X) + len(T) + len(U)
     counts["vars"]["binary"] = model.NumBinVars
+    counts["vars"]["T_free_blocked"] = n_blocked
     counts["constraints"]["total"] = model.NumConstrs
     counts["nonzeros"] = model.NumNZs
     return model, vars_, counts
@@ -240,6 +249,7 @@ def solve(
     log_file: str | None = None,
     mps_path: str | None = None,
     quiet: bool = False,
+    free_purchase: str = "keep",
 ) -> dict:
     """Build, optionally write MPS, solve. Returns a result dict (no file output besides log/MPS)."""
     env = gp.Env(empty=True)
@@ -248,7 +258,9 @@ def solve(
     env.start()
 
     t0 = time.perf_counter()
-    model, vars_, counts = build_model(inst, strong_linking=strong_linking, env=env)
+    model, vars_, counts = build_model(
+        inst, strong_linking=strong_linking, env=env, free_purchase=free_purchase
+    )
     build_s = time.perf_counter() - t0
     hwm_after_build = vm_hwm_mb()
 
