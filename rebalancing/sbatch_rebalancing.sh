@@ -75,15 +75,17 @@ echo "  commit:    $(git rev-parse --short HEAD 2>/dev/null || echo n/a)"
 echo "  args:      $* ${EXTRA[*]}"
 echo "============================================================================"
 
+SOLVE_OUT=$(mktemp)
 set +e
-python -m rebalancing.solve_gurobi "$@" "${EXTRA[@]}"
-RC=$?
+python -m rebalancing.solve_gurobi "$@" ${EXTRA[@]+"${EXTRA[@]}"} | tee "$SOLVE_OUT"
+RC=${PIPESTATUS[0]}
 set -e
 echo ">>> solve exit code: $RC"
 
-# Independent re-check of the run just written (no Gurobi). Run name is the
-# last 'ok' line of the solver's output: "[<run_name>] STATUS ... -> <run_dir>".
-RUN_DIR=$(grep -o -- '-> .*$' "logs/${SLURM_JOB_NAME:-rebalancing}_${SLURM_JOB_ID:-x}.out" 2>/dev/null | tail -n1 | cut -c4-)
+# Independent re-check of the run just written (no Gurobi). The solver's last
+# line is "[<run_name>] STATUS ObjVal=... -> <run_dir>".
+RUN_DIR=$(grep -o -- '-> .*$' "$SOLVE_OUT" | tail -n1 | cut -c4-)
+rm -f "$SOLVE_OUT"
 if [[ -n "${RUN_DIR}" && -f "${RUN_DIR}/summary.json" ]]; then
   python -m rebalancing.score_solution --run-dir "$RUN_DIR" || RC=$?
   if command -v seff >/dev/null 2>&1 && [[ -n "${SLURM_JOB_ID:-}" ]]; then
