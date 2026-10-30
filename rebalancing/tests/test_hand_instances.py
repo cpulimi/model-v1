@@ -99,6 +99,35 @@ def test_d_large_fc1_makes_one_shipment_not_worth_a_sender(fc1, expect_obj, expe
         assert sol["T"] == {("m", "B", "p"): 10}
 
 
+@pytest.mark.parametrize(
+    "free_purchase, expect_obj",
+    [
+        # B = 0 (the old Java generator's m == j artefact), C = 10, need 10.
+        #   keep : buy 10 free + FC2 1000                  = 1000
+        #          (ship all: 10*10 + FC1 100 + FC2 1000   = 1200)
+        ("keep", 1000),
+        # block: the zero-cost T is removed, so ship all   = 1200
+        #          (unmet: 10*10000 = 100000)
+        ("block", 1200),
+    ],
+)
+def test_free_purchase_keep_vs_block(free_purchase, expect_obj):
+    with pytest.warns(UserWarning, match="purchase costs on needed"):
+        inst = two_site(c=10, b=0)
+    res = solve(inst, mip_gap=0.0, quiet=True, free_purchase=free_purchase)
+    sol = res["solution"]
+    assert res["ObjVal"] == pytest.approx(expect_obj)
+    assert res["counts"]["vars"]["T_free_blocked"] == (1 if free_purchase == "block" else 0)
+    if free_purchase == "keep":
+        assert sol["T"] == {("m", "B", "p"): 10} and sol["X"] == {}
+    else:
+        assert sol["T"] == {} and sol["X"] == {("A", "B", "p"): 10}
+    assert score(inst, sol, free_purchase=free_purchase)["violations"] == []
+    # The scorer flags a free purchase under block.
+    keep_sol = {**sol, "T": {("m", "B", "p"): 10}, "X": {}, "Y": {}}
+    assert any("free-purchase" in v for v in score(inst, keep_sol, free_purchase="block")["violations"])
+
+
 def test_e_each_need_buys_only_from_its_cheapest_supplier():
     # No excess anywhere, so no X, no Y. Suppliers are uncapacitated, so every
     # (j,k) buys its whole need from its single cheapest supplier:
