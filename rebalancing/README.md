@@ -41,10 +41,13 @@ X ≤ N and T ≤ N from (3)), but the LP relaxation is tighter. This is for com
 
 | file | what |
 |---|---|
-| `data.py` | `Instance` dataclass, `generate_synthetic` (QVA paper, Table 1), `load_instance` (**stub**), `validate_instance`, CSV round trip |
+| `data.py` | `Instance` dataclass, `generate_synthetic` (QVA paper, Table 1), `load_instance` (Aarav's old-model workbooks), `validate_instance`, CSV round trip |
 | `solve_gurobi.py` | model build, solve, CLI, output writing |
 | `score_solution.py` | independent recheck from CSVs + instance, no Gurobi |
 | `collect_results.py` | gathers `summary.json` + `score.json` files into a markdown/CSV table |
+| `run_old_datasets.py` | all 50 old datasets × {keep, block}, checked against the reference optima |
+| `reference/old_datasets_reference_optima.csv` | reference optima (HiGHS, plus Gurobi up to 50 hubs) |
+| `results/old_datasets_summary.csv` | one row per old-dataset run: ObjVal vs reference, scorer result, flows, per-instance data checks |
 | `sbatch_rebalancing.sh` | Sol job script (written, not submitted) |
 | `tests/` | pytest: hand-solved cases (a)–(e), property checks, data layer, CLI end to end |
 
@@ -80,6 +83,21 @@ Each run directory contains:
 On Sol: `sbatch rebalancing/sbatch_rebalancing.sh --sites 100 --parts 100 --suppliers 5 --seed 0`
 (see the header for a size ladder). The local pip `gurobipy` license caps models at
 2000 vars / 2000 constraints.
+
+## Old datasets (Aarav's Java generator)
+
+Clone [cpulimi/OldModelDatasets](https://github.com/cpulimi/OldModelDatasets) next to this repo, then:
+
+```bash
+python -m rebalancing.solve_gurobi --instance ../OldModelDatasets/berlin_10_hubs/1001.xlsx --mip-gap 0
+python -m rebalancing.run_old_datasets            # all 50 x {keep, block}
+```
+
+- **Workbook layout:** each `<city>_<n>_hubs/<seed>.xlsx` has the sheets `PARA_Eik`, `PARA_Njk`, `PARA_Bmjk` and `PARA_Cijk`. Row 1 is a header and every cell is text. There is 1 part, 3 suppliers, and the hubs act as both i and j.
+- **What `load_instance` does:** converts every cell to int, drops zero E/N rows, drops the C diagonal, and keeps C keyed `(i,j,k)`. UD/FC1/FC2 come from the arguments. Ids are kept as the workbook's strings, so hub `1` and supplier `1` are different entities that share a label.
+- **Run names:** runs are named `<city>_<seed>`, plus `_blockfree` with `--free-purchase block`.
+- **Free purchases:** the Java generator sets `B[m,j] = 0` whenever m == j, so hubs 1–3 can buy from suppliers 1–3 for free. `validate_instance` warns about this. `--free-purchase block` removes the T variables whose B is 0, which gives the same optimum as the reference's "price at 175", because a 175 option is never the cheapest.
+- **Results:** all 100 runs match the reference `highs_obj` exactly and pass `score_solution`. See `results/old_datasets_summary.csv`.
 
 ## Interpretation choices (check these)
 
