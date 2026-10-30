@@ -17,8 +17,9 @@ from rebalancing.solve_gurobi import build_model, solve  # noqa: E402
 CASES = [
     dict(n_sites=12, n_parts=4, n_suppliers=3, seed=7),
     dict(n_sites=12, n_parts=4, n_suppliers=3, seed=8, ship_cost_by_part=True),
-    # Cheap unmet cost so U, T and X all show up in one solution.
-    dict(n_sites=12, n_parts=4, n_suppliers=3, seed=9, ud=120.0),
+    # Cheap unmet cost so U, T and X all show up in one solution
+    # (checked: X 1504, T 115, U 817 units at the optimum).
+    dict(n_sites=12, n_parts=4, n_suppliers=3, seed=9, ud=90.0),
     # Expensive fixed costs so some sites are left out.
     dict(n_sites=12, n_parts=4, n_suppliers=3, seed=10, fc1=3000.0, fc2=5000.0),
 ]
