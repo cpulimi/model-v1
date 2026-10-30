@@ -311,13 +311,13 @@ def write_solution_csvs(run_dir: Path, sol: dict, breakdown: dict) -> None:
     }
     for name, cols in specs.items():
         with open(run_dir / f"{name}.csv", "w", newline="") as fh:
-            w = csv.writer(fh)
+            w = csv.writer(fh, lineterminator="\n")
             w.writerow(cols + ["value"])
             for key, v in sorted((sol or {}).get(name, {}).items()):
                 key = key if isinstance(key, tuple) else (key,)
                 w.writerow([*key, v])
     with open(run_dir / "cost_breakdown.csv", "w", newline="") as fh:
-        w = csv.writer(fh)
+        w = csv.writer(fh, lineterminator="\n")
         w.writerow(["term", "value"])
         for term, v in (breakdown or {}).items():
             w.writerow([term, v])
