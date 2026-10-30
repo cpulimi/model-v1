@@ -342,7 +342,7 @@ def _num(s: str):
 
 def _write_rows(path: Path, header, rows) -> None:
     with open(path, "w", newline="") as fh:
-        w = csv.writer(fh)
+        w = csv.writer(fh, lineterminator="\n")
         w.writerow(header)
         w.writerows(rows)
 
