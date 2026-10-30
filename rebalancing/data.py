@@ -17,7 +17,8 @@ Index conventions (match the formulation in README.md):
 
 Three entry points:
     generate_synthetic(...)   Table 1 of the QVA paper
-    load_instance(path)       STUB -- real data format not known yet
+    load_instance(path)       Aarav's old-model workbooks (OldModelDatasets repo,
+                              <city>_<n>_hubs/<seed>.xlsx)
     write_instance_csv / read_instance_csv
                               our own round-trip format, used so every run
                               directory carries the exact instance it solved and
@@ -110,6 +111,9 @@ def validate_instance(inst: Instance) -> list:
     Warnings: any (site, part) with both E > 0 and N > 0. The model allows it
               (the site cannot ship to itself, i != j), but it usually means the
               upstream netting was not done.
+              Any purchase cost of 0. The old Java generator sets B[m,j] = 0
+              whenever m == j, so hubs 1-3 buy from suppliers 1-3 for free;
+              --free-purchase block removes those T variables.
     """
     errors = []
     site_set, part_set, sup_set = set(inst.sites), set(inst.parts), set(inst.suppliers)
@@ -160,6 +164,13 @@ def validate_instance(inst: Instance) -> list:
         soft.append(
             f"{len(both)} (site, part) pairs have both E > 0 and N > 0, e.g. {preview}. "
             "The model allows this (no self-shipping), but check the netting upstream."
+        )
+    free = [t for t in purchase_keys(inst) if inst.B[t] == 0]
+    if free:
+        preview = ", ".join(f"B[{m},{j},{k}]" for m, j, k in free[:10])
+        soft.append(
+            f"{len(free)} purchase costs on needed (j,k) are 0, e.g. {preview}. "
+            "Those purchases are free; --free-purchase block removes them."
         )
     for msg in soft:
         warnings.warn(msg, stacklevel=2)
@@ -262,23 +273,114 @@ def generate_synthetic(
 # ---------------------------------------------------------------------------
 # Real data
 # ---------------------------------------------------------------------------
-def load_instance(path) -> Instance:
-    """STUB -- real data loader, NOT IMPLEMENTED.
+OLD_SHEETS = {
+    # sheet name -> number of index columns before the value column
+    "PARA_Eik": 2,   # part k, site i, excess
+    "PARA_Njk": 2,   # part k, site j, need
+    "PARA_Bmjk": 3,  # part k, supplier m, site j, cost
+    "PARA_Cijk": 3,  # part k, site i, site j, cost
+}
 
-    The real data is coming from a teammate as files per city with E_jk / N_jk
-    style tables. The file format is not known yet, so this deliberately does
-    not guess at column names, units or file layout.
 
-    When the format is known, this function must:
-      1. build sites / parts / suppliers lists and the sparse E, N, C, B dicts
-         (drop zero entries; C may be keyed (i,j) or (i,j,k));
-      2. set UD, FC1, FC2;
-      3. call validate_instance(inst) before returning it.
+def load_instance(path, ud: float = 10000.0, fc1: float = 100.0, fc2: float = 1000.0) -> Instance:
+    """Load one of Aarav's old-model workbooks: <city>_<n>_hubs/<seed>.xlsx.
+
+    Sheets (row 1 is a header, every cell is TEXT and is converted to int):
+        PARA_Eik   part k, site i, excess
+        PARA_Njk   part k, site j, need
+        PARA_Bmjk  part k, supplier m, site j, cost
+        PARA_Cijk  part k, site i, site j, cost
+
+    Hubs play both roles (i = j); suppliers are a separate 1..3 set, so hub "1"
+    and supplier "1" are different entities that happen to share a label. Ids
+    are kept as the workbook's strings so names line up with Aarav's model.
+
+    Zero E / N rows are dropped, the C diagonal (i == j) is dropped, C stays
+    keyed (i, j, k). UD / FC1 / FC2 are not in the workbook and come from the
+    arguments. B is kept as given, zeros included (validate_instance warns).
     """
-    raise NotImplementedError(
-        f"load_instance({path!r}): real data format not known yet -- see docstring. "
-        "Use generate_synthetic() or read_instance_csv() for now."
+    import openpyxl  # only needed for this loader
+
+    path = Path(path)
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        missing = [s for s in OLD_SHEETS if s not in wb.sheetnames]
+        if missing:
+            raise ValueError(f"{path}: missing sheets {missing} (has {wb.sheetnames})")
+        tables = {}
+        for sheet, n_idx in OLD_SHEETS.items():
+            rows = list(wb[sheet].iter_rows(values_only=True))
+            body = {}
+            for r, row in enumerate(rows[1:], start=2):
+                if row is None or all(c is None or str(c).strip() == "" for c in row):
+                    continue
+                cells = [str(c).strip() for c in row[: n_idx + 1]]
+                try:
+                    value = int(cells[n_idx])
+                    keys = tuple(str(int(c)) for c in cells[:n_idx])
+                except (ValueError, IndexError):
+                    raise ValueError(f"{path} {sheet} row {r}: not integer text: {row!r}") from None
+                if keys in body:
+                    raise ValueError(f"{path} {sheet} row {r}: duplicate key {keys}")
+                body[keys] = value
+            tables[sheet] = body
+    finally:
+        wb.close()
+
+    E_raw = {(i, k): v for (k, i), v in tables["PARA_Eik"].items()}
+    N_raw = {(j, k): v for (k, j), v in tables["PARA_Njk"].items()}
+    B = {(m, j, k): v for (k, m, j), v in tables["PARA_Bmjk"].items()}
+    C_all = {(i, j, k): v for (k, i, j), v in tables["PARA_Cijk"].items()}
+    C = {key: v for key, v in C_all.items() if key[0] != key[1]}
+    diag_nonzero = sum(1 for key, v in C_all.items() if key[0] == key[1] and v != 0)
+
+    def by_number(ids):
+        return sorted(ids, key=int)
+
+    sites = by_number({s for s, _ in E_raw} | {s for s, _ in N_raw}
+                      | {key[0] for key in C_all} | {key[1] for key in C_all} | {key[1] for key in B})
+    parts = by_number({k for _, k in E_raw} | {k for _, k in N_raw} | {key[2] for key in B} | {key[2] for key in C_all})
+    suppliers = by_number({key[0] for key in B})
+
+    # <city>_<n>_hubs/<seed>.xlsx -> city, n, seed
+    folder = path.parent.name
+    city, _, rest = folder.partition("_")
+    hubs_label = rest.split("_")[0] if rest else ""
+    seed = path.stem
+
+    inst = Instance(
+        sites=sites,
+        parts=parts,
+        suppliers=suppliers,
+        E=_drop_zeros(E_raw),
+        N=_drop_zeros(N_raw),
+        C=C,
+        B=B,
+        UD=ud,
+        FC1=fc1,
+        FC2=fc2,
+        name=f"{city}_{seed}",
+        meta={
+            "source": "load_instance",
+            "path": str(path),
+            "city": city,
+            "hubs_label": int(hubs_label) if hubs_label.isdigit() else None,
+            "seed": int(seed) if seed.isdigit() else seed,
+            "n_sites": len(sites),
+            "n_parts": len(parts),
+            "n_suppliers": len(suppliers),
+            "rows": {s: len(t) for s, t in tables.items()},
+            "zero_E_rows_dropped": sum(1 for v in E_raw.values() if v == 0),
+            "zero_N_rows_dropped": sum(1 for v in N_raw.values() if v == 0),
+            "C_diagonal_rows_dropped": len(C_all) - len(C),
+            "C_diagonal_nonzero": diag_nonzero,
+            "B_zero_entries": sum(1 for v in B.values() if v == 0),
+        },
     )
+    if inst.meta["hubs_label"] is not None and inst.meta["hubs_label"] != len(sites):
+        warnings.warn(f"{path}: folder says {hubs_label} hubs but the workbook has {len(sites)} sites")
+    validate_instance(inst)
+    return inst
 
 
 # ---------------------------------------------------------------------------
