@@ -337,10 +337,14 @@ def write_solution_csvs(run_dir: Path, sol: dict, breakdown: dict) -> None:
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--sites", type=int, required=True)
-    p.add_argument("--parts", type=int, required=True)
-    p.add_argument("--suppliers", type=int, required=True)
+    p.add_argument("--instance", default=None,
+                   help="old-model workbook <city>_<n>_hubs/<seed>.xlsx instead of the synthetic generator")
+    p.add_argument("--sites", type=int, default=None)
+    p.add_argument("--parts", type=int, default=None)
+    p.add_argument("--suppliers", type=int, default=None)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--free-purchase", choices=("keep", "block"), default="keep",
+                   help="block: drop T variables whose purchase cost is 0")
     p.add_argument("--fc1", type=float, default=100.0, help="fixed cost per shipping site (paper '102' read as 10^2)")
     p.add_argument("--fc2", type=float, default=1000.0, help="fixed cost per receiving site (paper '103' read as 10^3)")
     p.add_argument("--ud", type=float, default=10000.0, help="unmet cost per unit (paper '104' read as 10^4)")
@@ -353,7 +357,13 @@ def parse_args(argv=None):
     p.add_argument("--run-name", default=None, help="default: derived from sizes/seed/flags")
     p.add_argument("--write-mps", action="store_true", help="also write model.mps (for CPLEX)")
     p.add_argument("--quiet", action="store_true", help="no Gurobi console log (log file still written)")
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    sizes = (args.sites, args.parts, args.suppliers)
+    if args.instance is None and None in sizes:
+        p.error("give --instance PATH, or all of --sites --parts --suppliers")
+    if args.instance is not None and any(s is not None for s in sizes):
+        p.error("--instance and --sites/--parts/--suppliers are alternatives; give one")
+    return args
 
 
 def main(argv=None) -> int:
@@ -361,19 +371,23 @@ def main(argv=None) -> int:
     wall0 = time.perf_counter()
 
     t0 = time.perf_counter()
-    inst = generate_synthetic(
-        args.sites,
-        args.parts,
-        args.suppliers,
-        args.seed,
-        fc1=args.fc1,
-        fc2=args.fc2,
-        ud=args.ud,
-        ship_cost_by_part=args.ship_cost_by_part,
-    )
+    if args.instance:
+        inst = load_instance(args.instance, ud=args.ud, fc1=args.fc1, fc2=args.fc2)
+    else:
+        inst = generate_synthetic(
+            args.sites,
+            args.parts,
+            args.suppliers,
+            args.seed,
+            fc1=args.fc1,
+            fc2=args.fc2,
+            ud=args.ud,
+            ship_cost_by_part=args.ship_cost_by_part,
+        )
     data_s = time.perf_counter() - t0
 
-    run_name = args.run_name or (inst.name + ("_strong" if args.strong_linking else ""))
+    suffix = ("_blockfree" if args.free_purchase == "block" else "") + ("_strong" if args.strong_linking else "")
+    run_name = args.run_name or (inst.name + suffix)
     run_dir = Path(args.out_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     write_instance_csv(inst, run_dir / "instance")
@@ -387,6 +401,7 @@ def main(argv=None) -> int:
         log_file=run_dir / "gurobi.log",
         mps_path=(run_dir / "model.mps") if args.write_mps else None,
         quiet=args.quiet,
+        free_purchase=args.free_purchase,
     )
     sol = res.pop("solution")
     write_solution_csvs(run_dir, sol, res.get("cost_breakdown"))
