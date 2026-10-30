@@ -1,0 +1,41 @@
+{
+  "name": "syn_s10_p1_m5_seed0",
+  "sites": [
+    "s0",
+    "s1",
+    "s2",
+    "s3",
+    "s4",
+    "s5",
+    "s6",
+    "s7",
+    "s8",
+    "s9"
+  ],
+  "parts": [
+    "p0"
+  ],
+  "suppliers": [
+    "m0",
+    "m1",
+    "m2",
+    "m3",
+    "m4"
+  ],
+  "UD": 10000.0,
+  "FC1": 100.0,
+  "FC2": 1000.0,
+  "ship_cost_by_part": false,
+  "meta": {
+    "source": "generate_synthetic",
+    "n_sites": 10,
+    "n_parts": 1,
+    "n_suppliers": 5,
+    "seed": 0,
+    "ship_cost_by_part": false,
+    "excess_rule": "per part, n_sites//2 random sites ~ DU(20,120), others 0",
+    "need_rule": "DU(50,150) where E[j,k] == 0, else 0",
+    "ship_cost_dist": "DU(50,150)",
+    "purchase_cost_dist": "DU(75,175)"
+  }
+}

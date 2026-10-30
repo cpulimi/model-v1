@@ -1,0 +1,117 @@
+{
+  "status": "OPTIMAL",
+  "status_code": 2,
+  "SolCount": 4,
+  "ObjVal": 28730.0,
+  "ObjBound": 28730.0,
+  "MIPGap": 0.0,
+  "Runtime": 0.0017080307006835938,
+  "NodeCount": 1.0,
+  "num_vars": {
+    "X": 24,
+    "T": 10,
+    "U": 4,
+    "Y": 6,
+    "Z": 4,
+    "total": 48,
+    "integer_nonbinary": 38,
+    "binary": 10,
+    "T_free_blocked": 2
+  },
+  "num_constraints": {
+    "c2_excess": 6,
+    "c3_need": 4,
+    "c4_ship_link": 6,
+    "c5_recv_link": 4,
+    "total": 20
+  },
+  "num_nonzeros": 130,
+  "timing_seconds": {
+    "data_load": 0.009065083984751254,
+    "model_build": 0.0012491249945014715,
+    "solve": 0.0017205000040121377,
+    "gurobi_runtime": 0.0017080307006835938,
+    "wall_total": 0.015184291987679899
+  },
+  "memory": {
+    "peak_memory_mb": null,
+    "peak_memory_source": "unavailable_not_linux",
+    "vm_hwm_mb_after_build": null,
+    "ru_maxrss_mb_fallback": 71.953125
+  },
+  "solution_stats": {
+    "units_shipped": 148,
+    "units_bought": 174,
+    "units_bought_free": 0,
+    "units_unmet": 0,
+    "total_need": 322,
+    "total_excess": 385,
+    "sites_shipping": 4,
+    "sites_receiving": 4,
+    "ship_arcs_used": 4
+  },
+  "cost_breakdown": {
+    "ship": 9893,
+    "purchase": 14437,
+    "unmet": 0.0,
+    "fixed_ship_FC1": 400.0,
+    "fixed_receive_FC2": 4000.0,
+    "total": 28730.0
+  },
+  "max_integrality_deviation": 0.0,
+  "gurobi_version": "13.0.3",
+  "git": {
+    "commit": "993da38f685885068378550783b816b76899deaa",
+    "branch": "rebalancing-gurobi",
+    "rebalancing_dirty": true
+  },
+  "params": {
+    "instance": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/berlin_10_hubs/1004.xlsx",
+    "sites": null,
+    "parts": null,
+    "suppliers": null,
+    "seed": 0,
+    "free_purchase": "block",
+    "fc1": 100.0,
+    "fc2": 1000.0,
+    "ud": 10000.0,
+    "ship_cost_by_part": false,
+    "time_limit": null,
+    "mip_gap": 0.0,
+    "threads": null,
+    "strong_linking": false,
+    "out_dir": "results/rebalancing/old_datasets",
+    "run_name": "berlin_1004_blockfree",
+    "write_mps": false,
+    "quiet": true,
+    "MIPGap": 0.0,
+    "linking": "aggregated_per_site_tight_M"
+  },
+  "instance": {
+    "name": "berlin_1004",
+    "source": "load_instance",
+    "path": "/Users/chetanpulimi/.gemini/antigravity/scratch/OldModelDatasets/berlin_10_hubs/1004.xlsx",
+    "city": "berlin",
+    "hubs_label": 10,
+    "seed": 1004,
+    "n_sites": 10,
+    "n_parts": 1,
+    "n_suppliers": 3,
+    "rows": {
+      "PARA_Eik": 10,
+      "PARA_Njk": 10,
+      "PARA_Bmjk": 30,
+      "PARA_Cijk": 100
+    },
+    "zero_E_rows_dropped": 4,
+    "zero_N_rows_dropped": 6,
+    "C_diagonal_rows_dropped": 10,
+    "C_diagonal_nonzero": 0,
+    "B_zero_entries": 3,
+    "UD": 10000.0,
+    "FC1": 100.0,
+    "FC2": 1000.0
+  },
+  "python": "3.13.5",
+  "platform": "darwin"
+}

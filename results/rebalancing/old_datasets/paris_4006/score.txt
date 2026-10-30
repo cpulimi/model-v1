@@ -1,0 +1,11 @@
+run: results/rebalancing/old_datasets/paris_4006
+  ship                   187,430.0000
+  purchase                     0.0000
+  unmet                        0.0000
+  fixed_ship_FC1           3,700.0000
+  fixed_receive_FC2       46,000.0000
+  total                  237,130.0000
+  Gurobi ObjVal          237,130.0000
+  relative diff      0.0   (rtol 1e-06)  -> MATCH
+  constraints (2)-(5): all satisfied
+PASS
