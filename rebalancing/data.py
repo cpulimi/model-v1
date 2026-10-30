@@ -312,8 +312,9 @@ def read_instance_csv(in_dir) -> Instance:
     """Read an instance written by write_instance_csv. Ids come back as strings."""
     d = Path(in_dir)
     meta = json.loads((d / "meta.json").read_text())
-    E = {(r[0], r[1]): _num(r[2]) for r in _read_rows(d / "E.csv")}
-    N = {(r[0], r[1]): _num(r[2]) for r in _read_rows(d / "N.csv")}
+    # Zeros dropped before validation (negatives survive and are rejected there).
+    E = _drop_zeros({(r[0], r[1]): _num(r[2]) for r in _read_rows(d / "E.csv")})
+    N = _drop_zeros({(r[0], r[1]): _num(r[2]) for r in _read_rows(d / "N.csv")})
     C = {tuple(r[:-1]): _num(r[-1]) for r in _read_rows(d / "C.csv")}
     B = {(r[0], r[1], r[2]): _num(r[3]) for r in _read_rows(d / "B.csv")}
     inst = Instance(
@@ -331,7 +332,6 @@ def read_instance_csv(in_dir) -> Instance:
         meta=meta.get("meta", {}),
     )
     validate_instance(inst)
-    inst.E, inst.N = _drop_zeros(inst.E), _drop_zeros(inst.N)
     return inst
 
 
