@@ -1,0 +1,10 @@
+{
+  "bigm": 10000.0,
+  "obj_bigm": 118320.0,
+  "status_bigm": "OPTIMAL",
+  "obj_tight_M": 118320.0,
+  "status_tight_M": "OPTIMAL",
+  "bound_tight_M": 118320.0,
+  "runtime_tight_M": 0.003849029541015625,
+  "equal": true
+}

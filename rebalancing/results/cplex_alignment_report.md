@@ -33,18 +33,60 @@ cost parameters or the data, not from M.
 
 ## pow10 vs cplex, per city (means over 10 instances)
 
-| city (hubs) | param set | objective | unmet | bought | shipped | Y_on | Z_on |
-|---|---|---:|---:|---:|---:|---:|---:|
-| Berlin (10) | pow10 | 20,659.5 | 0.0 | 171.5 | 149.7 | 2.6 | 4.4 |
-| | cplex | 16,312.9 | 28.3 | 143.2 | 149.7 | 2.6 | 4.1 |
-| Vienna (20) | pow10 | 64,893.6 | 0.0 | 292.3 | 608.9 | 7.9 | 10.4 |
-| | cplex | 55,432.9 | 20.3 | 274.7 | 606.2 | 7.9 | 10.2 |
-| London (50) | pow10 | 148,664.9 | 0.0 | 323.2 | 1,844.3 | 22.8 | 26.0 |
-| | cplex | 125,388.3 | 2.4 | 320.8 | 1,844.3 | 22.8 | 26.0 |
-| Paris (100) | pow10 | 263,535.3 | 0.0 | 266.2 | 3,770.5 | 43.5 | 48.2 |
-| | cplex | 220,386.9 | 0.0 | 266.2 | 3,770.5 | 43.5 | 48.2 |
-| Milan (200) | pow10 | 540,424.0 | 0.0 | 514.0 | 7,813.9 | 91.6 | 99.3 |
-| | cplex | 451,535.1 | 0.0 | 514.0 | 7,813.9 | 91.5 | 99.3 |
+### Berlin (10 hubs, 10 instances, keep)
+
+| mean of | pow10 (100/1000/10000, tight M) | cplex (102/103/104, BIGM 10000) |
+|---|---:|---:|
+| objective | 20,659.5 | 16,312.9 |
+| units unmet | 0.0 | 28.3 |
+| units bought | 171.5 | 143.2 |
+| units shipped | 149.7 | 149.7 |
+| Y_on (shipping sites) | 2.6 | 2.6 |
+| Z_on (receiving sites) | 4.4 | 4.1 |
+
+### Vienna (20 hubs, 10 instances, keep)
+
+| mean of | pow10 (100/1000/10000, tight M) | cplex (102/103/104, BIGM 10000) |
+|---|---:|---:|
+| objective | 64,893.6 | 55,432.9 |
+| units unmet | 0.0 | 20.3 |
+| units bought | 292.3 | 274.7 |
+| units shipped | 608.9 | 606.2 |
+| Y_on (shipping sites) | 7.9 | 7.9 |
+| Z_on (receiving sites) | 10.4 | 10.2 |
+
+### London (50 hubs, 10 instances, keep)
+
+| mean of | pow10 (100/1000/10000, tight M) | cplex (102/103/104, BIGM 10000) |
+|---|---:|---:|
+| objective | 148,664.9 | 125,388.3 |
+| units unmet | 0.0 | 2.4 |
+| units bought | 323.2 | 320.8 |
+| units shipped | 1,844.3 | 1,844.3 |
+| Y_on (shipping sites) | 22.8 | 22.8 |
+| Z_on (receiving sites) | 26.0 | 26.0 |
+
+### Paris (100 hubs, 10 instances, keep)
+
+| mean of | pow10 (100/1000/10000, tight M) | cplex (102/103/104, BIGM 10000) |
+|---|---:|---:|
+| objective | 263,535.3 | 220,386.9 |
+| units unmet | 0.0 | 0.0 |
+| units bought | 266.2 | 266.2 |
+| units shipped | 3,770.5 | 3,770.5 |
+| Y_on (shipping sites) | 43.5 | 43.5 |
+| Z_on (receiving sites) | 48.2 | 48.2 |
+
+### Milan (200 hubs, 10 instances, keep)
+
+| mean of | pow10 (100/1000/10000, tight M) | cplex (102/103/104, BIGM 10000) |
+|---|---:|---:|
+| objective | 540,424.0 | 451,535.1 |
+| units unmet | 0.0 | 0.0 |
+| units bought | 514.0 | 514.0 |
+| units shipped | 7,813.9 | 7,813.9 |
+| Y_on (shipping sites) | 91.6 | 91.5 |
+| Z_on (receiving sites) | 99.3 | 99.3 |
 
 Unmet, bought and shipped are in units. Y_on and Z_on count sites.
 

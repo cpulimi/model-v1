@@ -57,7 +57,7 @@ X ≤ N and T ≤ N from (3)), but the LP relaxation is tighter. This is for com
 | `results/old_datasets_summary_cplex.csv` | one row per cplex old-dataset run: ObjVal, bound, cost breakdown, flows, `score_pass`, `bigm_equal`, `cplex_obj` / `cplex_match` |
 | `results/cplex_alignment_report.md` | pow10 vs cplex per city, and the instances that leave need unmet under cplex |
 | `sbatch_rebalancing.sh` | Sol job script (written, not submitted) |
-| `tests/` | pytest: hand-solved cases (a)–(e), property checks, data layer, CLI end to end |
+| `tests/` | pytest: hand-solved cases (a)–(e), property checks, data layer, CLI end to end, cplex param set (unmet-optimal case, tight M = BIGM on the 10/20-hub workbooks) |
 
 ## Run
 

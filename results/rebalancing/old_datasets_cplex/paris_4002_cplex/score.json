@@ -1,0 +1,16 @@
+{
+  "pass": true,
+  "objective_recomputed": {
+    "ship": 237002.0,
+    "purchase": 608.0,
+    "unmet": 0.0,
+    "fixed_ship_FC1": 5202.0,
+    "fixed_receive_FC2": 5047.0,
+    "total": 247859.0
+  },
+  "objval_gurobi": 247859.0,
+  "relative_diff": 0.0,
+  "rtol": 1e-06,
+  "violations": [],
+  "idle_binaries": []
+}

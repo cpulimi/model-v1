@@ -1,0 +1,11 @@
+run: results/rebalancing/old_datasets_cplex/paris_4009_cplex
+  ship                   208,323.0000
+  purchase                56,682.0000
+  unmet                        0.0000
+  fixed_ship_FC1           4,386.0000
+  fixed_receive_FC2        5,871.0000
+  total                  275,262.0000
+  Gurobi ObjVal          275,262.0000
+  relative diff      0.0   (rtol 1e-06)  -> MATCH
+  constraints (2)-(5): all satisfied
+PASS
