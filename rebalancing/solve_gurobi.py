@@ -13,8 +13,20 @@
 which has the same integer feasible set (X <= E by (2), X <= N and T <= N by (3))
 but a tighter LP relaxation.
 
+--bigm FLOAT replaces M_i / M_j in (4)/(5) with one constant (Aarav's CPLEX model
+uses BIGM = 10000). As long as BIGM >= every M_i / M_j the integer feasible set,
+and so the optimum, is unchanged; only the LP relaxation is weaker.
+
+--param-set picks FC1 / FC2 / UD / BIGM together:
+    pow10  FC1 100, FC2 1000, UD 10000, tight per-site M   (default; the paper's
+           "102, 103, 104" read as 10^2, 10^3, 10^4)
+    cplex  FC1 102, FC2 103,  UD 104,   BIGM 10000         (the literal values in
+           Aarav's CPLEX model)
+Explicit --fc1 / --fc2 / --ud / --bigm override the set.
+
 Usage (from the repo root):
     python -m rebalancing.solve_gurobi --sites 10 --parts 1 --suppliers 5 --seed 0
+    python -m rebalancing.solve_gurobi --instance ../OldModelDatasets/berlin_10_hubs/1001.xlsx --param-set cplex
 """
 
 from __future__ import annotations
@@ -48,6 +60,14 @@ STATUS_NAMES = {
     for n in dir(GRB.Status)
     if n.isupper() and isinstance(getattr(GRB.Status, n), int)
 }
+
+# bigm None = tight per-site M (M_i = sum_k E[i,k], M_j = sum_k N[j,k]).
+PARAM_SETS = {
+    "pow10": {"fc1": 100.0, "fc2": 1000.0, "ud": 10000.0, "bigm": None},
+    "cplex": {"fc1": 102.0, "fc2": 103.0, "ud": 104.0, "bigm": 10000.0},
+}
+# The old-model workbooks (OldModelDatasets) all have 3 suppliers and 1 part.
+OLD_DATASET_SHAPE = {"suppliers": 3, "parts": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -92,8 +112,18 @@ def git_info() -> dict:
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
-def build_model(inst: Instance, strong_linking: bool = False, env=None, free_purchase: str = "keep"):
+def build_model(
+    inst: Instance,
+    strong_linking: bool = False,
+    env=None,
+    free_purchase: str = "keep",
+    bigm: float | None = None,
+):
     """Build the sparse model. Returns (model, vars, counts).
+
+    bigm None: (4)/(5) use the tight per-site M_i / M_j. bigm = a number: (4)/(5)
+    use that constant for every site (Aarav's CPLEX form). Not allowed together
+    with strong_linking, which has no (4)/(5) rows.
 
     Variables exist only where they can be nonzero:
         X  on ship_arcs(inst)          (E > 0, N > 0, i != j)
@@ -108,6 +138,10 @@ def build_model(inst: Instance, strong_linking: bool = False, env=None, free_pur
     """
     if free_purchase not in ("keep", "block"):
         raise ValueError(f"free_purchase must be 'keep' or 'block', got {free_purchase!r}")
+    if bigm is not None and strong_linking:
+        raise ValueError("bigm applies to the aggregated (4)/(5) rows; strong_linking replaces them")
+    if bigm is not None and bigm <= 0:
+        raise ValueError(f"bigm must be > 0, got {bigm}")
     x_keys = ship_arcs(inst)
     t_keys = purchase_keys(inst)
     n_blocked = 0
@@ -140,6 +174,20 @@ def build_model(inst: Instance, strong_linking: bool = False, env=None, free_pur
     M_in = defaultdict(float)
     for (j, k), v in inst.N.items():
         M_in[j] += v
+    # A constant BIGM below a site's tight M would cut off feasible flows and
+    # could move the optimum. Count those sites and warn.
+    bigm_short = 0
+    if bigm is not None:
+        bigm_short = sum(1 for i in y_keys if M_out[i] > bigm) + sum(1 for j in z_keys if M_in[j] > bigm)
+        if bigm_short:
+            warnings.warn(
+                f"bigm {bigm:g} is below the tight M of {bigm_short} linking rows "
+                f"(max M_i {max(M_out.values(), default=0):g}, max M_j {max(M_in.values(), default=0):g}); "
+                "(4)/(5) then restrict flows and may change the optimum",
+                stacklevel=2,
+            )
+    m_out = M_out if bigm is None else defaultdict(lambda: bigm)
+    m_in = M_in if bigm is None else defaultdict(lambda: bigm)
 
     model = gp.Model("rebalancing_base", env=env)
     model.ModelSense = GRB.MINIMIZE
@@ -169,16 +217,16 @@ def build_model(inst: Instance, strong_linking: bool = False, env=None, free_pur
         name="c3_need",
     )
     if not strong_linking:
-        # (4) / (5) aggregated big-M with the tight per-site M.
+        # (4) / (5) aggregated big-M: tight per-site M, or the constant bigm.
         cons["c4_ship_link"] = model.addConstrs(
-            (gp.quicksum(X[a] for a in x_out_i[i]) <= M_out[i] * Y[i] for i in y_keys),
+            (gp.quicksum(X[a] for a in x_out_i[i]) <= m_out[i] * Y[i] for i in y_keys),
             name="c4_ship_link",
         )
         cons["c5_recv_link"] = model.addConstrs(
             (
                 gp.quicksum(X[a] for a in x_in_j.get(j, ()))
                 + gp.quicksum(T[t] for t in t_in_j.get(j, ()))
-                <= M_in[j] * Z[j]
+                <= m_in[j] * Z[j]
                 for j in z_keys
             ),
             name="c5_recv_link",
@@ -207,6 +255,9 @@ def build_model(inst: Instance, strong_linking: bool = False, env=None, free_pur
     counts["vars"]["T_free_blocked"] = n_blocked
     counts["constraints"]["total"] = model.NumConstrs
     counts["nonzeros"] = model.NumNZs
+    counts["bigm"] = bigm
+    counts["bigm_below_tight_M_rows"] = bigm_short
+    counts["tight_M_max"] = {"M_i": max(M_out.values(), default=0), "M_j": max(M_in.values(), default=0)}
     return model, vars_, counts
 
 
@@ -251,6 +302,7 @@ def solve(
     mps_path: str | None = None,
     quiet: bool = False,
     free_purchase: str = "keep",
+    bigm: float | None = None,
 ) -> dict:
     """Build, optionally write MPS, solve. Returns a result dict (no file output besides log/MPS)."""
     env = gp.Env(empty=True)
@@ -260,7 +312,7 @@ def solve(
 
     t0 = time.perf_counter()
     model, vars_, counts = build_model(
-        inst, strong_linking=strong_linking, env=env, free_purchase=free_purchase
+        inst, strong_linking=strong_linking, env=env, free_purchase=free_purchase, bigm=bigm
     )
     build_s = time.perf_counter() - t0
     hwm_after_build = vm_hwm_mb()
