@@ -489,6 +489,7 @@ def main(argv=None) -> int:
     t0 = time.perf_counter()
     if args.instance:
         inst = load_instance(args.instance, ud=args.ud, fc1=args.fc1, fc2=args.fc2)
+        check_old_dataset_shape(inst, args.instance)
     else:
         inst = generate_synthetic(
             args.sites,
@@ -502,8 +503,7 @@ def main(argv=None) -> int:
         )
     data_s = time.perf_counter() - t0
 
-    suffix = ("_blockfree" if args.free_purchase == "block" else "") + ("_strong" if args.strong_linking else "")
-    run_name = args.run_name or (inst.name + suffix)
+    run_name = args.run_name or (inst.name + run_name_suffix(args))
     run_dir = Path(args.out_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     write_instance_csv(inst, run_dir / "instance")
@@ -518,6 +518,7 @@ def main(argv=None) -> int:
         mps_path=(run_dir / "model.mps") if args.write_mps else None,
         quiet=args.quiet,
         free_purchase=args.free_purchase,
+        bigm=args.bigm,
     )
     sol = res.pop("solution")
     write_solution_csvs(run_dir, sol, res.get("cost_breakdown"))
@@ -550,7 +551,15 @@ def main(argv=None) -> int:
             **vars(args),
             "run_name": run_name,
             "MIPGap": args.mip_gap,
-            "linking": "strong_per_arc" if args.strong_linking else "aggregated_per_site_tight_M",
+            "param_set": args.param_set,
+            "bigm": args.bigm,
+            "linking": (
+                "strong_per_arc" if args.strong_linking
+                else "aggregated_per_site_tight_M" if args.bigm is None
+                else "aggregated_constant_bigm"
+            ),
+            "bigm_below_tight_M_rows": res["counts"]["bigm_below_tight_M_rows"],
+            "tight_M_max": res["counts"]["tight_M_max"],
         },
         "instance": {"name": inst.name, **inst.meta, "UD": inst.UD, "FC1": inst.FC1, "FC2": inst.FC2},
         "python": sys.version.split()[0],
