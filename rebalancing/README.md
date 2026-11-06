@@ -23,6 +23,12 @@ min  Σ C·X + Σ B·T + UD·Σ U + FC1·Σ Y + FC2·Σ Z
 (5)  Σ_{i,k} X[i,j,k] + Σ_{m,k} T[m,j,k]       ≤ M_j · Z[j]    M_j = Σ_k N[j,k]
 ```
 
+`--bigm FLOAT` uses one constant M in (4)/(5) instead of M_i / M_j. Aarav's CPLEX model uses
+BIGM = 10000. A constant BIGM is valid as long as it is at least every M_i / M_j: then the
+optimum is the same and only the LP relaxation is weaker. The run records how many rows fall
+short (`bigm_below_tight_M_rows`) and warns if any do. On the old datasets the largest
+M_i / M_j is 149.
+
 `--strong-linking` replaces (4)/(5) with per-arc rows:
 `X[i,j,k] ≤ min(E[i,k],N[j,k])·Y[i]`, `X[i,j,k] ≤ min(E[i,k],N[j,k])·Z[j]`,
 `T[m,j,k] ≤ N[j,k]·Z[j]`. The integer feasible set is the same (X ≤ E from (2);
@@ -45,9 +51,11 @@ X ≤ N and T ≤ N from (3)), but the LP relaxation is tighter. This is for com
 | `solve_gurobi.py` | model build, solve, CLI, output writing |
 | `score_solution.py` | independent recheck from CSVs + instance, no Gurobi |
 | `collect_results.py` | gathers `summary.json` + `score.json` files into a markdown/CSV table |
-| `run_old_datasets.py` | all 50 old datasets × {keep, block}, checked against the reference optima |
-| `reference/old_datasets_reference_optima.csv` | reference optima (HiGHS, plus Gurobi up to 50 hubs) |
-| `results/old_datasets_summary.csv` | one row per old-dataset run: ObjVal vs reference, scorer result, flows, per-instance data checks |
+| `run_old_datasets.py` | all 50 old datasets: pow10 × {keep, block} checked against the reference optima, or `--param-set cplex` (keep only) with the tight-M vs BIGM check |
+| `reference/old_datasets_reference_optima.csv` | reference optima (HiGHS, plus Gurobi up to 50 hubs), solved at 100/1000/10000 |
+| `results/old_datasets_summary.csv` | one row per pow10 old-dataset run: ObjVal vs reference, scorer result, flows, per-instance data checks |
+| `results/old_datasets_summary_cplex.csv` | one row per cplex old-dataset run: ObjVal, bound, cost breakdown, flows, `score_pass`, `bigm_equal`, `cplex_obj` / `cplex_match` |
+| `results/cplex_alignment_report.md` | pow10 vs cplex per city, and the instances that leave need unmet under cplex |
 | `sbatch_rebalancing.sh` | Sol job script (written, not submitted) |
 | `tests/` | pytest: hand-solved cases (a)–(e), property checks, data layer, CLI end to end |
 
@@ -64,7 +72,10 @@ python -m rebalancing.collect_results results/rebalancing
 
 CLI: `--sites --parts --suppliers --seed --fc1 --fc2 --ud --time-limit --mip-gap
 (1e-4) --threads --strong-linking --out-dir --write-mps`, plus `--ship-cost-by-part`,
-`--run-name` and `--quiet`.
+`--run-name` and `--quiet`. For workbooks there are also `--instance`, `--free-purchase {keep,block}`,
+`--param-set {pow10,cplex}` and `--bigm FLOAT|tight`. `--fc1`/`--fc2`/`--ud`/`--bigm` override the set.
+
+Run names get a suffix for anything that differs from pow10 defaults: `_cplex`, an overridden value (e.g. `_ud500`, `_tightM`), `_blockfree` and `_strong`. Runs with different settings never share a directory. pow10 run names are unchanged.
 
 Each run directory contains:
 - `summary.json`
@@ -100,11 +111,27 @@ python -m rebalancing.run_old_datasets            # all 50 x {keep, block}
 - **Results:** all 100 runs match the reference `highs_obj` exactly and pass `score_solution`. See `results/old_datasets_summary.csv`.
   99 of 100 also have the same flow totals (shipped / bought / unmet) as the reference. The exception is `london_3003_blockfree`: it ships 1874 and buys 35 where the reference ships 1868 and buys 41, at the same objective 137875. That is an alternative optimum, not an error.
 - **Run directories** for every row are under `results/rebalancing/old_datasets/` (repo root). The CPLEX `.mps` copies for the `--mps-seeds` models are in `results/rebalancing/old_datasets/mps/`.
+- **Shape check:** `--instance` fails unless the workbook has exactly 3 suppliers and 1 part.
+- **cplex param set:** `python -m rebalancing.run_old_datasets --param-set cplex` solves all 50 workbooks, keep variant only, with `--mip-gap 0`.
+  - It does not compare against `highs_obj`, because that reference was solved at 100/1000/10000.
+  - Each instance is also re-solved with the tight M. `bigm_equal` says whether the two ObjVals are exactly equal.
+  - Results: 50/50 OPTIMAL, 50/50 `score_solution` PASS, 50/50 `bigm_equal`. 6 instances leave need unmet.
+  - Run directories are in `results/rebalancing/old_datasets_cplex/`, with the `.mps` files for seeds x001 in `mps/`.
+  - See `results/cplex_alignment_report.md`.
+  - When Aarav's objectives arrive, run `--param-set cplex --cplex-results aarav.csv --fill-only` (columns `city, seed, cplex_obj`). It fills `cplex_obj` and `cplex_match` (exact equality) without re-solving. **Until then, the CPLEX match is not verified.**
 
 ## Interpretation choices (check these)
 
 1. **T index.** The source doc defines `T_ijk` but uses `T_mjk` everywhere else. The code uses `T[m,j,k]`.
-2. **FC1 / FC2 / UD.** The paper prints "102, 103, 104". The defaults read these as 10², 10³, 10⁴ (100, 1000, 10000). All three are CLI arguments.
+2. **FC1 / FC2 / UD and M.** The paper prints "102, 103, 104". There are two parameter sets (`--param-set`):
+   - **`pow10`** (default) reads them as 10², 10³, 10⁴: FC1 = 100, FC2 = 1000, UD = 10000, with the tight per-site M in (4)/(5). All earlier results and the HiGHS reference use this set.
+   - **`cplex`** uses the literal values, as Aarav's CPLEX model does: FC1 = 102, FC2 = 103, UD = 104, with a constant BIGM = 10000.
+
+   Explicit `--fc1/--fc2/--ud/--bigm` override either set.
+
+   The two sets give different optima. UD = 104 is cheaper than many ship/buy options, so some need goes unmet. The BIGM choice does not change the optimum: tight M and BIGM 10000 agree on all 50 old datasets.
+
+   Aarav's CPLEX `.dat` file also says M = 5 suppliers. That is outdated: every workbook has M = 3 suppliers and K = 1 part.
 3. **"50% of sites have 0 excess."** This is applied per part: exactly `n_sites // 2` random sites have excess of that part, so with 5 sites, 2 have excess and 3 have need. A per-cell coin flip could leave a small instance with no excess at all.
 4. **Synthetic ship cost** is drawn per site pair, `C[i,j]`, by default. `--ship-cost-by-part` draws `C[i,j,k]` instead. With 1 part (as in the paper) the two are the same thing.
 5. **Every supplier sells every needed (j,k).** `T` exists for all m wherever N > 0, and a missing `B` is a validation error, as specified. If the real data has supplier catalogs, the `T` keys should come from B's keys instead.
