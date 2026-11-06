@@ -44,8 +44,18 @@ def read_solution(run_dir: Path) -> dict:
     return sol
 
 
-def score(inst: Instance, sol: dict, strong_linking: bool = False, free_purchase: str = "keep") -> dict:
-    """Recompute the objective and list every violated constraint."""
+def score(
+    inst: Instance,
+    sol: dict,
+    strong_linking: bool = False,
+    free_purchase: str = "keep",
+    bigm: float | None = None,
+) -> dict:
+    """Recompute the objective and list every violated constraint.
+
+    (4)/(5) are always checked with the tight per-site M; with bigm set they are
+    also checked with that constant, so a run whose BIGM cut flows is caught.
+    """
     X, T, U, Y, Z = (sol[n] for n in ("X", "T", "U", "Y", "Z"))
     E, N = inst.E, inst.N
     viol = []
@@ -105,6 +115,14 @@ def score(inst: Instance, sol: dict, strong_linking: bool = False, free_purchase
         s = in_j[j] + buy_j[j]
         if s > M_in[j] * Z.get(j, 0.0) + TOL:
             viol.append(f"(5) recv link: site {j} receives {s} with Z = {Z.get(j, 0.0)} (M_j = {M_in[j]})")
+    if bigm is not None:
+        for i, s in out_i.items():
+            if s > bigm * Y.get(i, 0.0) + TOL:
+                viol.append(f"(4) ship link: site {i} ships {s} with Y = {Y.get(i, 0.0)} (BIGM = {bigm})")
+        for j in set(in_j) | set(buy_j):
+            s = in_j[j] + buy_j[j]
+            if s > bigm * Z.get(j, 0.0) + TOL:
+                viol.append(f"(5) recv link: site {j} receives {s} with Z = {Z.get(j, 0.0)} (BIGM = {bigm})")
     if strong_linking:
         for (i, j, k), v in X.items():
             cap = min(E.get((i, k), 0), N.get((j, k), 0))
@@ -144,8 +162,9 @@ def main(argv=None) -> int:
     summary = json.loads((run_dir / "summary.json").read_text())
     strong = summary.get("params", {}).get("strong_linking", False)
     free_purchase = summary.get("params", {}).get("free_purchase", "keep")
+    bigm = summary.get("params", {}).get("bigm")
     sol = read_solution(run_dir)
-    res = score(inst, sol, strong_linking=strong, free_purchase=free_purchase)
+    res = score(inst, sol, strong_linking=strong, free_purchase=free_purchase, bigm=bigm)
 
     obj = res["objective"]["total"]
     ref = summary.get("ObjVal")
