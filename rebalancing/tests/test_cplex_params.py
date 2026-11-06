@@ -65,10 +65,13 @@ def test_unmet_is_optimal_when_ud_is_below_every_option(bigm):
     assert chk["violations"] == [] and chk["objective"]["total"] == pytest.approx(1040)
 
 
-def test_same_instance_ships_under_pow10():
-    # Control: the same C/B under pow10 (UD 10000) ships all 10:
-    #   10*105 + 100 + 1000 = 2150 < buy 10*110 + 1000 = 2100? no -> buy 2100.
-    #   buy all 2100 < ship all 2150 < unmet 100000, so it buys 10.
+def test_same_instance_buys_under_pow10():
+    # Control: the same C/B under pow10 (FC1 100, FC2 1000, UD 10000):
+    #   buy all   : 10*110         + 1000 = 2100
+    #   ship all  : 10*105 + 100   + 1000 = 2150
+    #   mixed x>=1: 105x + 110(10-x) + 1100 = 2200 - 5x >= 2150
+    #   unmet all : 10*10000             = 100000
+    # optimum 2100: buy 10, nothing unmet.
     inst = two_site_cplex(c=105, b=110)
     inst.UD, inst.FC1, inst.FC2 = 10000.0, 100.0, 1000.0
     res = solve(inst, mip_gap=0.0, quiet=True)
