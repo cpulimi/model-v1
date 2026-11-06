@@ -38,6 +38,7 @@ import resource
 import subprocess
 import sys
 import time
+import warnings
 from collections import defaultdict
 from pathlib import Path
 
@@ -398,9 +399,14 @@ def parse_args(argv=None):
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--free-purchase", choices=("keep", "block"), default="keep",
                    help="block: drop T variables whose purchase cost is 0")
-    p.add_argument("--fc1", type=float, default=100.0, help="fixed cost per shipping site (paper '102' read as 10^2)")
-    p.add_argument("--fc2", type=float, default=1000.0, help="fixed cost per receiving site (paper '103' read as 10^3)")
-    p.add_argument("--ud", type=float, default=10000.0, help="unmet cost per unit (paper '104' read as 10^4)")
+    p.add_argument("--param-set", choices=sorted(PARAM_SETS), default="pow10",
+                   help="pow10: FC1 100, FC2 1000, UD 10000, tight M (default). "
+                        "cplex: FC1 102, FC2 103, UD 104, BIGM 10000 (Aarav's CPLEX model)")
+    p.add_argument("--fc1", type=float, default=None, help="fixed cost per shipping site (overrides --param-set)")
+    p.add_argument("--fc2", type=float, default=None, help="fixed cost per receiving site (overrides --param-set)")
+    p.add_argument("--ud", type=float, default=None, help="unmet cost per unit (overrides --param-set)")
+    p.add_argument("--bigm", type=_bigm_arg, default=None,
+                   help="constant M in (4)/(5), or 'tight' for the per-site M (overrides --param-set)")
     p.add_argument("--ship-cost-by-part", action="store_true", help="draw C[i,j,k] instead of C[i,j]")
     p.add_argument("--time-limit", type=float, default=None, help="seconds; default none")
     p.add_argument("--mip-gap", type=float, default=1e-4)
@@ -416,7 +422,64 @@ def parse_args(argv=None):
         p.error("give --instance PATH, or all of --sites --parts --suppliers")
     if args.instance is not None and any(s is not None for s in sizes):
         p.error("--instance and --sites/--parts/--suppliers are alternatives; give one")
+    if args.strong_linking and args.bigm not in (None, TIGHT):
+        p.error("--bigm applies to the aggregated (4)/(5) rows; --strong-linking replaces them")
+
+    # Resolve the parameter set; explicit flags win. args.<name>_explicit keeps
+    # what was typed, args.<name> the value actually used.
+    preset = PARAM_SETS[args.param_set]
+    for name in ("fc1", "fc2", "ud", "bigm"):
+        given = getattr(args, name)
+        setattr(args, f"{name}_explicit", given)
+        if given is None:
+            setattr(args, name, preset[name])
+        elif given is TIGHT:
+            setattr(args, name, None)
+    if args.strong_linking and args.bigm_explicit is None:
+        args.bigm = None  # the preset's BIGM has no (4)/(5) rows to go into
     return args
+
+
+TIGHT = "tight"
+
+
+def _bigm_arg(s: str):
+    if s.strip().lower() == TIGHT:
+        return TIGHT
+    v = float(s)
+    if v <= 0:
+        raise argparse.ArgumentTypeError(f"--bigm must be > 0 or 'tight', got {s}")
+    return v
+
+
+def run_name_suffix(args) -> str:
+    """Suffix that keeps runs with different settings in different directories.
+
+    pow10 with no overrides adds nothing, so those run names are unchanged.
+    """
+    preset = PARAM_SETS[args.param_set]
+    parts = [] if args.param_set == "pow10" else [args.param_set]
+    for name in ("fc1", "fc2", "ud"):
+        if getattr(args, name) != preset[name]:
+            parts.append(f"{name}{getattr(args, name):g}")
+    if args.bigm != preset["bigm"] and not args.strong_linking:
+        parts.append("tightM" if args.bigm is None else f"bigm{args.bigm:g}")
+    if args.free_purchase == "block":
+        parts.append("blockfree")
+    if args.strong_linking:
+        parts.append("strong")
+    return "".join(f"_{s}" for s in parts)
+
+
+def check_old_dataset_shape(inst: Instance, path) -> None:
+    """Fail loudly unless the workbook has exactly 3 suppliers and 1 part."""
+    got = {"suppliers": len(inst.suppliers), "parts": len(inst.parts)}
+    if got != OLD_DATASET_SHAPE:
+        raise SystemExit(
+            f"{path}: expected {OLD_DATASET_SHAPE['suppliers']} suppliers and "
+            f"{OLD_DATASET_SHAPE['parts']} part, found {got['suppliers']} suppliers "
+            f"({inst.suppliers}) and {got['parts']} parts ({inst.parts})"
+        )
 
 
 def main(argv=None) -> int:
